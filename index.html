@@ -14,6 +14,16 @@
     backdrop-filter: blur(4px);
   }
   #hud b { color: #fff; }
+  #variants {
+    position: fixed; top: 14px; right: 16px; display: flex; gap: 8px;
+    font: 13px system-ui, sans-serif;
+  }
+  #variants button {
+    color: #cfcfd6; background: rgba(0,0,0,.35); border: 1px solid #3a3a44;
+    padding: 8px 14px; border-radius: 10px; cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+  #variants button.on { color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25); }
 </style>
 </head>
 <body>
@@ -22,6 +32,10 @@
   <b>Cherry Wood Hall Tree</b> — 84 × 43 × 179 cm<br>
   Top shelf 84×25 · metal rail · 3 drawers (18 cm rows)<br>
   Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan
+</div>
+<div id="variants">
+  <button id="vA" class="on">Model A · straight cabinet</button>
+  <button id="vB">Model B · slanted cabinet</button>
 </div>
 
 <script type="importmap">
@@ -108,11 +122,11 @@ scene.add(floor);
 const unit = new THREE.Group();
 scene.add(unit);
 
-function box(w, h, d, mat, x, y, z) {
+function box(w, h, d, mat, x, y, z, parent = unit) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.position.set(x, y, z);
   m.castShadow = m.receiveShadow = true;
-  unit.add(m);
+  parent.add(m);
   return m;
 }
 
@@ -211,35 +225,99 @@ box(W_TOP - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2,
 const barY = CAB_TOP + 1.195 * 0.58;   // within the 119.5cm open section
 box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01);
 
-// ---------- drawer cabinet: 80w × 43d, two 18cm rows on a 10cm base ----------
+// ---------- drawer cabinet: two variants, switchable in the UI ----------
 const CAB_W = 2 * xLeg - LEG_X - 0.008;   // cabinet body fits BETWEEN the legs
 const CAB_D = D_BOTTOM - 0.01;
 const bodyH = DRAWER_H * 2 + 0.02;
-box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0);              // carcass
-box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0); // cabinet top
-box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0);               // bottom frame
-
-// drawer fronts: 3 drawers — two 40cm drawers on top, one full-width below
-const zFace = CAB_D / 2 + 0.008;
 const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
 
-function pull(x, y) {
+function pull(parent, x, y, z, tilt = 0) {
   const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
-  p.position.set(x, y + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  p.position.set(x, y, z);
+  p.rotation.x = tilt;
   p.castShadow = true;
-  unit.add(p);
+  parent.add(p);
 }
 
-// bottom row: single full-width drawer
-box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace);
-pull(0, rowY(0));
+// -- Model A: straight cabinet front (as the product photo)
+const cabA = new THREE.Group();
+unit.add(cabA);
+{
+  box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0, cabA);              // carcass
+  box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0, cabA); // top
+  box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0, cabA);               // bottom frame
 
-// top row: two half-width drawers with a divider between them
-for (const sx of [-1, 1]) {
-  box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace);
-  pull(sx * CAB_W / 4, rowY(1));
+  const zFace = CAB_D / 2 + 0.008;
+  // bottom row: single full-width drawer
+  box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace, cabA);
+  pull(cabA, 0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  // top row: two half-width drawers with a divider between them
+  for (const sx of [-1, 1]) {
+    box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace, cabA);
+    pull(cabA, sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  }
+  box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004, cabA);
 }
-box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004);
+
+// -- Model B: cabinet front slanted at the SAME angle as the diagonal
+// legs, staying just behind their front plane so it never passes them.
+const cabB = new THREE.Group();
+unit.add(cabB);
+{
+  const zFront = y => zr0 + wH - tanT * y;   // front-face plane of the diagonals
+  const zCarc  = y => zFront(y) - 0.024;     // carcass front, recessed for the drawers
+  const zBk = -CAB_D / 2;
+  const tilt = Math.atan(tanT);
+
+  // carcass: slanted side profile extruded across the width (u = -z)
+  const cp = new THREE.Shape();
+  cp.moveTo(-zBk, BASE_H);
+  cp.lineTo(-zCarc(BASE_H), BASE_H);
+  cp.lineTo(-zCarc(CAB_TOP - 0.022), CAB_TOP - 0.022);
+  cp.lineTo(-zBk, CAB_TOP - 0.022);
+  cp.closePath();
+  const carc = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(cp, { depth: CAB_W, bevelEnabled: false }), cherry);
+  carc.rotation.y = Math.PI / 2;
+  carc.position.x = -CAB_W / 2;
+  carc.castShadow = carc.receiveShadow = true;
+  cabB.add(carc);
+
+  // top board follows the shallower top depth
+  const dTop = zCarc(CAB_TOP) - zBk + 0.02;
+  box(CAB_W + 0.006, 0.022, dTop, cherryLite, 0, CAB_TOP - 0.011, zBk + dTop / 2 - 0.01, cabB);
+
+  // slanted drawer fronts, faces parallel to the legs
+  const face = (w, x, r) => {
+    const yc = rowY(r);
+    const f = new THREE.Mesh(new THREE.BoxGeometry(w, DRAWER_H - 0.015, 0.018), cherryLite);
+    f.position.set(x, yc, zCarc(yc) + 0.009);
+    f.rotation.x = -tilt;
+    f.castShadow = true;
+    cabB.add(f);
+    const yp = yc + DRAWER_H / 2 - 0.035;
+    pull(cabB, x, yp, zCarc(yp) + 0.024, -tilt);
+  };
+  face(CAB_W - 0.025, 0, 0);                                // bottom: full width
+  for (const sx of [-1, 1]) face(CAB_W / 2 - 0.015, sx * CAB_W / 4, 1); // top: two
+  const dv = new THREE.Mesh(new THREE.BoxGeometry(0.012, DRAWER_H - 0.01, 0.02), cherryDark);
+  dv.position.set(0, rowY(1), zCarc(rowY(1)) + 0.002);
+  dv.rotation.x = -tilt;
+  cabB.add(dv);
+}
+
+// ---------- variant switcher ----------
+const btnA = document.getElementById('vA');
+const btnB = document.getElementById('vB');
+function setVariant(b) {
+  cabA.visible = !b;
+  cabB.visible = b;
+  btnA.classList.toggle('on', !b);
+  btnB.classList.toggle('on', b);
+}
+btnA.onclick = () => setVariant(false);
+btnB.onclick = () => setVariant(true);
+setVariant(new URLSearchParams(location.search).get('model') === 'b');
 
 
 // ---------- render loop ----------
