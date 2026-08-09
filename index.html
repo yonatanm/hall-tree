@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cherry Wood Hall Tree — 3D (179cm)</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1b20; }
+  #app { width: 100%; height: 100%; }
+  #hud {
+    position: fixed; top: 14px; left: 16px; color: #cfcfd6;
+    font: 13px/1.5 system-ui, sans-serif; pointer-events: none;
+    background: rgba(0,0,0,.35); padding: 10px 14px; border-radius: 10px;
+    backdrop-filter: blur(4px);
+  }
+  #hud b { color: #fff; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud">
+  <b>Cherry Wood Hall Tree</b> — 84 × 43 × 179 cm<br>
+  Top shelf 84×25 · metal rail · 3 drawers (18 cm rows)<br>
+  Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ============ dimensions from the product sheet (1 unit = 1 m) ============
+const H_TOTAL   = 1.79;   // total height 179cm
+const W_TOP     = 0.84;   // top width 84cm
+const D_TOP     = 0.25;   // top shelf depth 25cm
+const SHELF_GAP = 0.105;  // shelf-to-rail 10.5cm
+const D_BOTTOM  = 0.43;   // footprint depth 43cm
+const W_CAB     = 0.80;   // cabinet width 80cm
+const DRAWER_H  = 0.18;   // each drawer row 18cm
+const BASE_H    = 0.10;   // ground clearance 10cm
+const DRAWER_W  = 0.40;   // each drawer 40cm
+const BAR_H     = 0.10;   // mid crossbar board height 10cm
+
+const CAB_TOP = BASE_H + DRAWER_H * 2 + 0.03;  // ≈0.49 — cabinet top surface
+
+// ---------- renderer / scene / camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b1b20);
+scene.fog = new THREE.Fog(0x1b1b20, 12, 26);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(2.6, 1.7, 3.4);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 0.8;
+controls.maxDistance = 10;
+controls.maxPolarAngle = Math.PI * 0.52;
+
+// ---------- lights ----------
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x30281f, 0.5));
+
+const key = new THREE.DirectionalLight(0xfff2e0, 1.7);
+key.position.set(4, 6, 4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -3; key.shadow.camera.right = 3;
+key.shadow.camera.top = 3;   key.shadow.camera.bottom = -3;
+key.shadow.bias = -0.0004;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0x9db8ff, 0.4);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+// ---------- materials: cherry wood (樱桃木色) ----------
+const cherry     = new THREE.MeshStandardMaterial({ color: 0xb0622d, roughness: 0.58, metalness: 0.02 });
+const cherryDark = new THREE.MeshStandardMaterial({ color: 0x94491f, roughness: 0.62, metalness: 0.02 });
+const cherryLite = new THREE.MeshStandardMaterial({ color: 0xc47a3e, roughness: 0.55, metalness: 0.02 });
+const brass      = new THREE.MeshStandardMaterial({ color: 0xd9c391, roughness: 0.3,  metalness: 0.85 });
+const chrome     = new THREE.MeshStandardMaterial({ color: 0xd4d7db, roughness: 0.22, metalness: 0.92 });
+const floorMat   = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.95 });
+
+// ---------- floor ----------
+const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const unit = new THREE.Group();
+scene.add(unit);
+
+function box(w, h, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  m.castShadow = m.receiveShadow = true;
+  unit.add(m);
+  return m;
+}
+
+// ---------- legs: right-triangle frame (三角結構) ----------
+// Side view: the BACK leg is a vertical flat plank running the FULL
+// 179cm — its top sticks up ABOVE the shelf. The slanted FRONT plank
+// rises from the front of the 43cm footprint and dies into the back
+// leg just under the shelf.
+const LEG_X   = 0.035;                          // plank thickness (x)
+const BACK_D  = 0.07;                           // back leg depth (z)
+const FRONT_D = 0.055;                          // front leg depth (z)
+const SHELF_T = 0.03;
+const Z_BACK  = -(D_BOTTOM / 2 - BACK_D / 2);   // vertical back leg center
+const xLeg  = W_TOP / 2 - LEG_X / 2;            // ±0.40
+
+const BACKRAIL_H = 0.075;                       // wooden back rail between leg tops
+const SHELF_TOP = H_TOTAL - 0.015 - BACKRAIL_H; // shelf sits ~9cm below leg tops
+const SHELF_BOT = SHELF_TOP - SHELF_T;
+const APEX_Y = SHELF_BOT;                       // front plank ends under the shelf
+
+// How the two planks actually join (from the product photos):
+//  - the diagonal rises PAST the shelf and dies into the back leg near
+//    its very top with a PLUMB cut — both tops end almost level;
+//  - below that joint a slim wedge of daylight opens between the planks,
+//    bridged partway down by a small turned-wood spacer;
+//  - the shelf slots in beside the diagonal (they share no x-space).
+const ZF = Z_BACK + BACK_D / 2;              // front plane of the back leg
+const DIAG_TOP = H_TOTAL;                    // diagonal top flush with the leg top
+const TOP_W = 0.035;                         // plank width remaining beside the leg top
+let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - TOP_W) / DIAG_TOP;
+const wH  = FRONT_D / Math.cos(Math.atan(tanT));  // horizontal plank width
+const zr0 = D_BOTTOM / 2 - wH;               // rear bottom corner at the floor
+tanT = (zr0 + wH - ZF - TOP_W) / DIAG_TOP;
+const yPl = (zr0 - ZF) / tanT;               // plumb joint starts here (≈ shelf level)
+
+// side profile in (z, y); u = -z so the extrusion axis maps to world +x
+const prof = new THREE.Shape();
+prof.moveTo(-zr0, 0);                                 // rear bottom
+prof.lineTo(-(zr0 + wH), 0);                          // front bottom
+prof.lineTo(-(zr0 + wH - tanT * DIAG_TOP), DIAG_TOP); // front top, beside the leg top
+prof.lineTo(-ZF, DIAG_TOP);                           // horizontal top edge
+prof.lineTo(-ZF, yPl);                                // plumb face against the leg
+prof.closePath();
+const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
+
+for (const sx of [-1, 1]) {
+  // vertical back plank, full height
+  const back = new THREE.Mesh(new THREE.BoxGeometry(LEG_X, H_TOTAL, BACK_D), cherry);
+  back.position.set(sx * xLeg, H_TOTAL / 2, Z_BACK);
+  back.castShadow = back.receiveShadow = true;
+  unit.add(back);
+
+  // slanted front plank with mitered cuts
+  const front = new THREE.Mesh(frontGeo, cherry);
+  front.rotation.y = Math.PI / 2;
+  front.position.x = sx * xLeg - LEG_X / 2;
+  front.castShadow = front.receiveShadow = true;
+  unit.add(front);
+
+}
+
+// ---------- top shelf: 84 × 25 cm ----------
+// Board sits BETWEEN the legs (inner face to inner face), back edge at
+// the back legs, extending 25cm forward past the leg fronts.
+const Z_SHELF = -D_BOTTOM / 2 + D_TOP / 2;   // -0.09 — shelf center
+box(W_TOP - 2 * LEG_X, SHELF_T, D_TOP, cherryLite, 0, SHELF_BOT + SHELF_T / 2, Z_SHELF);
+// wooden back rail: board spanning between the leg tops, rising from the
+// shelf's back edge to just under the leg tops
+box(W_TOP - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2, Z_BACK - BACK_D / 2 + 0.011);
+
+// ---------- metal clothes rail (金屬掛衣杆), 10.5cm under the shelf ----------
+// One chrome tube bent into a wide U: horizontal bar with both ends
+// curving up into the underside of the shelf.
+{
+  const railY = SHELF_BOT - SHELF_GAP;
+  const X0 = W_TOP / 2 - LEG_X - 0.06;    // where the ends rise to the shelf
+  const z = Z_SHELF;
+  const pts = [
+    new THREE.Vector3(-X0, SHELF_BOT + 0.005, z),
+    new THREE.Vector3(-X0, railY + 0.05, z),
+    new THREE.Vector3(-X0 + 0.010, railY + 0.014, z),
+    new THREE.Vector3(-X0 + 0.05, railY, z),
+    new THREE.Vector3(0, railY, z),
+    new THREE.Vector3(X0 - 0.05, railY, z),
+    new THREE.Vector3(X0 - 0.010, railY + 0.014, z),
+    new THREE.Vector3(X0, railY + 0.05, z),
+    new THREE.Vector3(X0, SHELF_BOT + 0.005, z),
+  ];
+  const rail = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.0085, 12), chrome);
+  rail.castShadow = true;
+  unit.add(rail);
+}
+
+// ---------- mid crossbar: 10cm board between the back legs ----------
+const barY = CAB_TOP + 1.195 * 0.58;   // within the 119.5cm open section
+box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01);
+
+// ---------- drawer cabinet: 80w × 43d, two 18cm rows on a 10cm base ----------
+const CAB_W = 2 * xLeg - LEG_X - 0.008;   // cabinet body fits BETWEEN the legs
+const CAB_D = D_BOTTOM - 0.01;
+const bodyH = DRAWER_H * 2 + 0.02;
+box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0);              // carcass
+box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0); // cabinet top
+box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0);               // bottom frame
+
+// drawer fronts: 3 drawers — two 40cm drawers on top, one full-width below
+const zFace = CAB_D / 2 + 0.008;
+const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
+
+function pull(x, y) {
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
+  p.position.set(x, y + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  p.castShadow = true;
+  unit.add(p);
+}
+
+// bottom row: single full-width drawer
+box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace);
+pull(0, rowY(0));
+
+// top row: two half-width drawers with a divider between them
+for (const sx of [-1, 1]) {
+  box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace);
+  pull(sx * CAB_W / 4, rowY(1));
+}
+box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004);
+
+
+// ---------- render loop ----------
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
