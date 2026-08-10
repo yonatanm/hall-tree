@@ -32,6 +32,12 @@
   #variants button.on, #views button.on {
     color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25);
   }
+  #variantSel {
+    display: none; position: fixed; top: 48px; left: 50%; transform: translateX(-50%);
+    color: #fff; background: rgba(0,0,0,.55); border: 1px solid #b0622d;
+    padding: 8px 12px; border-radius: 10px; font: 13px system-ui, sans-serif;
+    max-width: 92vw;
+  }
   #photo {
     position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none;
     align-items: center; justify-content: center; z-index: 10; cursor: zoom-out;
@@ -41,13 +47,8 @@
   @media (max-width: 640px) {
     #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
     #hud .hint { display: none; }
-    #variants {
-      top: 48px; left: 50%; right: auto;
-      transform: translateX(-50%); font-size: 12px;
-      flex-direction: row; flex-wrap: wrap; justify-content: center;
-      width: max-content; max-width: 96vw;
-    }
-    #variants button { padding: 7px 10px; }
+    #variants { display: none; }      /* buttons replaced by the dropdown */
+    #variantSel { display: block; }
     #views { bottom: 12px; font-size: 12px; }
     #views button { padding: 7px 10px; }
   }
@@ -61,6 +62,7 @@
   Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan</span>
 </div>
 <div id="variants"></div>
+<select id="variantSel" aria-label="Model"></select>
 <div id="views">
   <button data-view="threeQ">¾ view</button>
   <button data-view="front">Front</button>
@@ -407,6 +409,7 @@ function buildModel(wTop, opts = {}) {
 
 // ---------- build all models, wire the variant switcher ----------
 const variantsEl = document.getElementById('variants');
+const variantSel = document.getElementById('variantSel');
 const sizeLabel = document.getElementById('sizeLabel');
 for (const m of MODELS) {
   m.unit = buildModel(m.wTop, m);
@@ -416,7 +419,12 @@ for (const m of MODELS) {
   m.btn.textContent = m.name;
   m.btn.onclick = () => setModel(m.id);
   variantsEl.appendChild(m.btn);
+  const opt = document.createElement('option');
+  opt.value = m.id;
+  opt.textContent = m.name;
+  variantSel.appendChild(opt);
 }
+variantSel.onchange = () => setModel(variantSel.value);
 
 let dimsOn = false;
 function setModel(id) {
@@ -425,6 +433,7 @@ function setModel(id) {
     m.btn.classList.toggle('on', m.id === id);
     if (m.id === id) sizeLabel.textContent = `${Math.round(m.wTop * 100)} × 43 × 179 cm`;
   }
+  variantSel.value = id;
 }
 
 // ---------- dimensions toggle ----------
