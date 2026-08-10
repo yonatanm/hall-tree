@@ -14,17 +14,23 @@
     backdrop-filter: blur(4px);
   }
   #hud b { color: #fff; }
+  #variants {
+    position: fixed; top: 14px; right: 16px; display: flex; gap: 8px;
+    font: 13px system-ui, sans-serif;
+  }
   #views {
     position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
     font: 13px system-ui, sans-serif; max-width: 96vw;
   }
-  #views button {
+  #variants button, #views button {
     color: #cfcfd6; background: rgba(0,0,0,.35); border: 1px solid #3a3a44;
     padding: 8px 12px; border-radius: 10px; cursor: pointer;
     backdrop-filter: blur(4px); font: inherit;
   }
-  #views button.on { color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25); }
+  #variants button.on, #views button.on {
+    color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25);
+  }
   #photo {
     position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none;
     align-items: center; justify-content: center; z-index: 10; cursor: zoom-out;
@@ -34,6 +40,12 @@
   @media (max-width: 640px) {
     #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
     #hud .hint { display: none; }
+    #variants {
+      top: 56px; left: 50%; right: auto;
+      transform: translateX(-50%); font-size: 12px;
+      width: max-content; max-width: 96vw;
+    }
+    #variants button { padding: 7px 10px; }
     #views { bottom: 12px; font-size: 12px; }
     #views button { padding: 7px 10px; }
   }
@@ -42,10 +54,11 @@
 <body>
 <div id="app"></div>
 <div id="hud">
-  <b>Cherry Wood Hall Tree</b> — 84 × 43 × 179 cm<br>
-  <span class="hint">Top shelf 84×25 · metal rail · 3 drawers (18 cm rows)<br>
+  <b>Cherry Wood Hall Tree</b> — <span id="sizeLabel">84 × 43 × 179 cm</span><br>
+  <span class="hint">Top shelf · metal rail · 3 drawers (18 cm rows)<br>
   Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan</span>
 </div>
+<div id="variants"></div>
 <div id="views">
   <button data-view="threeQ">¾ view</button>
   <button data-view="front">Front</button>
@@ -72,18 +85,22 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ============ dimensions from the product sheet (1 unit = 1 m) ============
+// Width varies per model; every width-dependent part derives from wTop.
 const H_TOTAL   = 1.79;   // total height 179cm
-const W_TOP     = 0.84;   // top width 84cm
 const D_TOP     = 0.25;   // top shelf depth 25cm
 const SHELF_GAP = 0.105;  // shelf-to-rail 10.5cm
 const D_BOTTOM  = 0.43;   // footprint depth 43cm
-const W_CAB     = 0.80;   // cabinet width 80cm
 const DRAWER_H  = 0.18;   // each drawer row 18cm
 const BASE_H    = 0.10;   // ground clearance 10cm
-const DRAWER_W  = 0.40;   // each drawer 40cm
 const BAR_H     = 0.10;   // mid crossbar board height 10cm
 
 const CAB_TOP = BASE_H + DRAWER_H * 2 + 0.03;  // ≈0.49 — cabinet top surface
+
+// The models on offer: original 80cm cabinet (84cm overall), wide 100cm.
+const MODELS = [
+  { id: 'a', name: 'Model A · 80cm',  wTop: 0.84 },
+  { id: 'b', name: 'Model B · 100cm', wTop: 1.04 },
+];
 
 // ---------- renderer / scene / camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -133,179 +150,15 @@ const brass      = new THREE.MeshStandardMaterial({ color: 0xd9c391, roughness: 
 const chrome     = new THREE.MeshStandardMaterial({ color: 0xd4d7db, roughness: 0.22, metalness: 0.92 });
 const floorMat   = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.95 });
 
+const dimMat = new THREE.LineBasicMaterial({
+  color: 0xffcf8a, depthTest: false, transparent: true, opacity: 0.95,
+});
+
 // ---------- floor ----------
 const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
-
-const unit = new THREE.Group();
-scene.add(unit);
-
-function box(w, h, d, mat, x, y, z, parent = unit) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  m.castShadow = m.receiveShadow = true;
-  parent.add(m);
-  return m;
-}
-
-// ---------- legs: right-triangle frame (三角結構) ----------
-// Side view: the BACK leg is a vertical flat plank running the FULL
-// 179cm — its top sticks up ABOVE the shelf. The slanted FRONT plank
-// rises from the front of the 43cm footprint and dies into the back
-// leg just under the shelf.
-const LEG_X   = 0.035;                          // plank thickness (x)
-const BACK_D  = 0.07;                           // back leg depth (z)
-const FRONT_D = 0.055;                          // front leg depth (z)
-const SHELF_T = 0.03;
-const Z_BACK  = -(D_BOTTOM / 2 - BACK_D / 2);   // vertical back leg center
-const xLeg  = W_TOP / 2 - LEG_X / 2;            // ±0.40
-
-const BACKRAIL_H = 0.075;                       // wooden back rail between leg tops
-const SHELF_TOP = H_TOTAL - 0.015 - BACKRAIL_H; // shelf sits ~9cm below leg tops
-const SHELF_BOT = SHELF_TOP - SHELF_T;
-const APEX_Y = SHELF_BOT;                       // front plank ends under the shelf
-
-// How the two planks actually join (from the product photos):
-//  - the diagonal rises PAST the shelf and dies into the back leg near
-//    its very top with a PLUMB cut — both tops end almost level;
-//  - below that joint a slim wedge of daylight opens between the planks,
-//    bridged partway down by a small turned-wood spacer;
-//  - the shelf slots in beside the diagonal (they share no x-space).
-const ZF = Z_BACK + BACK_D / 2;              // front plane of the back leg
-const DIAG_TOP = H_TOTAL;                    // diagonal top flush with the leg top
-const TOP_W = 0.035;                         // plank width remaining beside the leg top
-let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - TOP_W) / DIAG_TOP;
-const wH  = FRONT_D / Math.cos(Math.atan(tanT));  // horizontal plank width
-const zr0 = D_BOTTOM / 2 - wH;               // rear bottom corner at the floor
-tanT = (zr0 + wH - ZF - TOP_W) / DIAG_TOP;
-const yPl = (zr0 - ZF) / tanT;               // plumb joint starts here (≈ shelf level)
-
-// side profile in (z, y); u = -z so the extrusion axis maps to world +x
-const prof = new THREE.Shape();
-prof.moveTo(-zr0, 0);                                 // rear bottom
-prof.lineTo(-(zr0 + wH), 0);                          // front bottom
-prof.lineTo(-(zr0 + wH - tanT * DIAG_TOP), DIAG_TOP); // front top, beside the leg top
-prof.lineTo(-ZF, DIAG_TOP);                           // horizontal top edge
-prof.lineTo(-ZF, yPl);                                // plumb face against the leg
-prof.closePath();
-const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
-
-for (const sx of [-1, 1]) {
-  // vertical back plank, full height
-  const back = new THREE.Mesh(new THREE.BoxGeometry(LEG_X, H_TOTAL, BACK_D), cherry);
-  back.position.set(sx * xLeg, H_TOTAL / 2, Z_BACK);
-  back.castShadow = back.receiveShadow = true;
-  unit.add(back);
-
-  // slanted front plank with mitered cuts
-  const front = new THREE.Mesh(frontGeo, cherry);
-  front.rotation.y = Math.PI / 2;
-  front.position.x = sx * xLeg - LEG_X / 2;
-  front.castShadow = front.receiveShadow = true;
-  unit.add(front);
-
-}
-
-// ---------- top shelf: 84 × 25 cm ----------
-// Board sits BETWEEN the legs (inner face to inner face), back edge at
-// the back legs, extending 25cm forward past the leg fronts.
-const Z_SHELF = -D_BOTTOM / 2 + D_TOP / 2;   // -0.09 — shelf center
-box(W_TOP - 2 * LEG_X, SHELF_T, D_TOP, cherryLite, 0, SHELF_BOT + SHELF_T / 2, Z_SHELF);
-// wooden back rail: board spanning between the leg tops, rising from the
-// shelf's back edge to just under the leg tops
-box(W_TOP - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2, Z_BACK - BACK_D / 2 + 0.011);
-
-// ---------- metal clothes rail (金屬掛衣杆), 10.5cm under the shelf ----------
-// One chrome tube bent into a wide U: horizontal bar with both ends
-// curving up into the underside of the shelf.
-{
-  const railY = SHELF_BOT - SHELF_GAP;
-  const X0 = W_TOP / 2 - LEG_X - 0.06;    // where the ends rise to the shelf
-  const z = Z_SHELF;
-  const pts = [
-    new THREE.Vector3(-X0, SHELF_BOT + 0.005, z),
-    new THREE.Vector3(-X0, railY + 0.05, z),
-    new THREE.Vector3(-X0 + 0.010, railY + 0.014, z),
-    new THREE.Vector3(-X0 + 0.05, railY, z),
-    new THREE.Vector3(0, railY, z),
-    new THREE.Vector3(X0 - 0.05, railY, z),
-    new THREE.Vector3(X0 - 0.010, railY + 0.014, z),
-    new THREE.Vector3(X0, railY + 0.05, z),
-    new THREE.Vector3(X0, SHELF_BOT + 0.005, z),
-  ];
-  const rail = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.0085, 12), chrome);
-  rail.castShadow = true;
-  unit.add(rail);
-}
-
-// ---------- mid crossbar: 10cm board between the back legs ----------
-const barY = CAB_TOP + 1.195 * 0.58;   // within the 119.5cm open section
-box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01);
-
-// ---------- drawer cabinet: 80w × 43d, two 18cm rows on a 10cm base ----------
-const CAB_W = 2 * xLeg - LEG_X - 0.008;   // cabinet body fits BETWEEN the legs
-const CAB_D = D_BOTTOM - 0.01;
-const bodyH = DRAWER_H * 2 + 0.02;
-const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
-
-function pull(parent, x, y, z, tilt = 0) {
-  const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
-  p.position.set(x, y, z);
-  p.rotation.x = tilt;
-  p.castShadow = true;
-  parent.add(p);
-}
-
-const cabinet = new THREE.Group();
-unit.add(cabinet);
-{
-  box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0, cabinet);              // carcass
-  box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0, cabinet); // top
-  box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0, cabinet);               // bottom frame
-
-  const zFace = CAB_D / 2 + 0.008;
-  // bottom row: single full-width drawer
-  box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace, cabinet);
-  pull(cabinet, 0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
-  // top row: two half-width drawers with a divider between them
-  for (const sx of [-1, 1]) {
-    box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace, cabinet);
-    pull(cabinet, sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
-  }
-  box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004, cabinet);
-}
-
-// ---------- camera view presets ----------
-const VIEWS = {
-  threeQ: [2.6, 1.7, 3.4],
-  front:  [0, 1.1, 4.1],
-  right:  [4.1, 1.1, 0],
-  back:   [0, 1.1, -4.1],
-  left:   [-4.1, 1.1, 0],
-  top:    [0, 5.0, 0.7],
-};
-let camTween = null;
-for (const b of document.querySelectorAll('#views button[data-view]')) {
-  b.onclick = () => {
-    camTween = { from: camera.position.clone(), to: new THREE.Vector3(...VIEWS[b.dataset.view]), t: 0 };
-  };
-}
-
-// ---------- reference photo overlay ----------
-const photo = document.getElementById('photo');
-document.getElementById('photoBtn').onclick = () => photo.classList.add('open');
-photo.onclick = () => photo.classList.remove('open');
-
-// ---------- dimension overlay (the measurements from the product sheet) ----------
-const dims = new THREE.Group();
-unit.add(dims);
-
-const dimMat = new THREE.LineBasicMaterial({
-  color: 0xffcf8a, depthTest: false, transparent: true, opacity: 0.95,
-});
 
 function makeLabel(text) {
   const pad = 14, fh = 44;
@@ -332,52 +185,238 @@ function makeLabel(text) {
   return label;
 }
 
-function dim(a, b, text, labelOff = [0, 0, 0]) {
-  a = new THREE.Vector3(...a);
-  b = new THREE.Vector3(...b);
-  const dir = b.clone().sub(a).normalize();
-  const ref = Math.abs(dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-  const perp = new THREE.Vector3().crossVectors(dir, ref).normalize().multiplyScalar(0.018);
-  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), dimMat);
-  line.renderOrder = 2;
-  dims.add(line);
-  for (const p of [a, b]) {   // end ticks
-    const t = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
-      [p.clone().add(perp), p.clone().sub(perp)]), dimMat);
-    t.renderOrder = 2;
-    dims.add(t);
+// ============ the hall tree, parameterized by overall width ============
+function buildModel(wTop) {
+  const unit = new THREE.Group();
+
+  function box(w, h, d, mat, x, y, z, parent = unit) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    parent.add(m);
+    return m;
   }
-  const label = makeLabel(text);
-  label.position.copy(a.add(b).multiplyScalar(0.5)).add(new THREE.Vector3(...labelOff));
-  if (Math.abs(dir.z) > 0.9) label.rotation.y = Math.PI / 2;  // depth dims face sideways
-  const back = label.clone();          // mirror copy so text reads from both sides
-  back.rotation.y += Math.PI;
-  label.translateZ(0.001);
-  back.translateZ(0.001);
-  dims.add(label, back);
+
+  // ---------- legs: right-triangle frame (三角結構) ----------
+  // Side view: the BACK leg is a vertical flat plank running the FULL
+  // 179cm — its top sticks up ABOVE the shelf. The slanted FRONT plank
+  // rises from the front of the 43cm footprint toward the top.
+  const LEG_X   = 0.035;                          // plank thickness (x)
+  const BACK_D  = 0.07;                           // back leg depth (z)
+  const FRONT_D = 0.055;                          // front leg depth (z)
+  const SHELF_T = 0.03;
+  const Z_BACK  = -(D_BOTTOM / 2 - BACK_D / 2);   // vertical back leg center
+  const xLeg  = wTop / 2 - LEG_X / 2;
+
+  const BACKRAIL_H = 0.075;                       // wooden back rail between leg tops
+  const SHELF_TOP = H_TOTAL - 0.015 - BACKRAIL_H; // shelf sits ~9cm below leg tops
+  const SHELF_BOT = SHELF_TOP - SHELF_T;
+
+  // How the two planks join (from the product photos): the diagonal rises
+  // PAST the shelf and dies into the back leg near its very top with a
+  // PLUMB cut — both tops end level; a slim wedge of daylight opens below.
+  const ZF = Z_BACK + BACK_D / 2;              // front plane of the back leg
+  const DIAG_TOP = H_TOTAL;                    // diagonal top flush with the leg top
+  const TOP_W = 0.035;                         // plank width remaining beside the leg top
+  let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - TOP_W) / DIAG_TOP;
+  const wH  = FRONT_D / Math.cos(Math.atan(tanT));  // horizontal plank width
+  const zr0 = D_BOTTOM / 2 - wH;               // rear bottom corner at the floor
+  tanT = (zr0 + wH - ZF - TOP_W) / DIAG_TOP;
+  const yPl = (zr0 - ZF) / tanT;               // plumb joint starts here (≈ shelf level)
+
+  // side profile in (z, y); u = -z so the extrusion axis maps to world +x
+  const prof = new THREE.Shape();
+  prof.moveTo(-zr0, 0);                                 // rear bottom
+  prof.lineTo(-(zr0 + wH), 0);                          // front bottom
+  prof.lineTo(-(zr0 + wH - tanT * DIAG_TOP), DIAG_TOP); // front top, beside the leg top
+  prof.lineTo(-ZF, DIAG_TOP);                           // horizontal top edge
+  prof.lineTo(-ZF, yPl);                                // plumb face against the leg
+  prof.closePath();
+  const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
+
+  for (const sx of [-1, 1]) {
+    // vertical back plank, full height
+    const back = new THREE.Mesh(new THREE.BoxGeometry(LEG_X, H_TOTAL, BACK_D), cherry);
+    back.position.set(sx * xLeg, H_TOTAL / 2, Z_BACK);
+    back.castShadow = back.receiveShadow = true;
+    unit.add(back);
+
+    // slanted front plank with mitered cuts
+    const front = new THREE.Mesh(frontGeo, cherry);
+    front.rotation.y = Math.PI / 2;
+    front.position.x = sx * xLeg - LEG_X / 2;
+    front.castShadow = front.receiveShadow = true;
+    unit.add(front);
+  }
+
+  // ---------- top shelf ----------
+  // Board sits BETWEEN the legs, back edge at the back legs, extending
+  // 25cm forward past the leg fronts.
+  const Z_SHELF = -D_BOTTOM / 2 + D_TOP / 2;
+  box(wTop - 2 * LEG_X, SHELF_T, D_TOP, cherryLite, 0, SHELF_BOT + SHELF_T / 2, Z_SHELF);
+  // wooden back rail spanning between the leg tops
+  box(wTop - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2, Z_BACK - BACK_D / 2 + 0.011);
+
+  // ---------- metal clothes rail (金屬掛衣杆), 10.5cm under the shelf ----------
+  // One chrome tube bent into a wide U, ends curving up into the shelf.
+  {
+    const railY = SHELF_BOT - SHELF_GAP;
+    const X0 = wTop / 2 - LEG_X - 0.06;
+    const z = Z_SHELF;
+    const pts = [
+      new THREE.Vector3(-X0, SHELF_BOT + 0.005, z),
+      new THREE.Vector3(-X0, railY + 0.05, z),
+      new THREE.Vector3(-X0 + 0.010, railY + 0.014, z),
+      new THREE.Vector3(-X0 + 0.05, railY, z),
+      new THREE.Vector3(0, railY, z),
+      new THREE.Vector3(X0 - 0.05, railY, z),
+      new THREE.Vector3(X0 - 0.010, railY + 0.014, z),
+      new THREE.Vector3(X0, railY + 0.05, z),
+      new THREE.Vector3(X0, SHELF_BOT + 0.005, z),
+    ];
+    const rail = new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.0085, 12), chrome);
+    rail.castShadow = true;
+    unit.add(rail);
+  }
+
+  // ---------- mid crossbar: 10cm board between the back legs ----------
+  const barY = CAB_TOP + 1.195 * 0.58;   // within the 119.5cm open section
+  box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01);
+
+  // ---------- drawer cabinet: two 18cm rows on a 10cm base ----------
+  const CAB_W = 2 * xLeg - LEG_X - 0.008;   // cabinet body fits BETWEEN the legs
+  const CAB_D = D_BOTTOM - 0.01;
+  const bodyH = DRAWER_H * 2 + 0.02;
+  const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
+
+  function pull(x, y, z) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
+    p.position.set(x, y, z);
+    p.castShadow = true;
+    unit.add(p);
+  }
+
+  box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0);              // carcass
+  box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0); // top
+  box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0);               // bottom frame
+
+  const zFace = CAB_D / 2 + 0.008;
+  // bottom row: single full-width drawer
+  box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace);
+  pull(0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  // top row: two half-width drawers with a divider between them
+  for (const sx of [-1, 1]) {
+    box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace);
+    pull(sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  }
+  box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004);
+
+  // ---------- dimension overlay (sheet measurements, sticky labels) ----------
+  const dims = new THREE.Group();
+  unit.add(dims);
+
+  function dim(a, b, text, labelOff = [0, 0, 0]) {
+    a = new THREE.Vector3(...a);
+    b = new THREE.Vector3(...b);
+    const dir = b.clone().sub(a).normalize();
+    const ref = Math.abs(dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const perp = new THREE.Vector3().crossVectors(dir, ref).normalize().multiplyScalar(0.018);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), dimMat);
+    line.renderOrder = 2;
+    dims.add(line);
+    for (const p of [a, b]) {   // end ticks
+      const t = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+        [p.clone().add(perp), p.clone().sub(perp)]), dimMat);
+      t.renderOrder = 2;
+      dims.add(t);
+    }
+    const label = makeLabel(text);
+    label.position.copy(a.add(b).multiplyScalar(0.5)).add(new THREE.Vector3(...labelOff));
+    if (Math.abs(dir.z) > 0.9) label.rotation.y = Math.PI / 2;  // depth dims face sideways
+    const back = label.clone();          // mirror copy so text reads from both sides
+    back.rotation.y += Math.PI;
+    label.translateZ(0.001);
+    back.translateZ(0.001);
+    dims.add(label, back);
+  }
+
+  const topCm = Math.round(wTop * 100);        // 84 / 104
+  const cabCm = topCm - 4;                     // sheet cabinet width: 80 / 100
+  const xSide = CAB_W / 2 + 0.09;              // vertical dims beside the cabinet
+
+  dim([-wTop / 2, 1.88, Z_SHELF], [wTop / 2, 1.88, Z_SHELF], `${topCm}cm`, [0, 0.05, 0]);
+  dim([xLeg + 0.15, 1.83, -D_BOTTOM / 2], [xLeg + 0.15, 1.83, -D_BOTTOM / 2 + D_TOP], '25cm', [0.09, 0.03, 0]);
+  dim([-0.28, SHELF_BOT, Z_SHELF + 0.1], [-0.28, SHELF_BOT - SHELF_GAP, Z_SHELF + 0.1], '10.5cm', [-0.13, 0, 0]);
+  dim([-(xLeg + 0.22), 0, 0.05], [-(xLeg + 0.22), H_TOTAL, 0.05], '179cm', [-0.12, 0, 0]);
+  dim([xLeg + 0.20, CAB_TOP, 0.08], [xLeg + 0.20, CAB_TOP + 1.195, 0.08], '119.5cm', [0.14, 0, 0]);
+  dim([0.12, barY - BAR_H / 2, -0.16], [0.12, barY + BAR_H / 2, -0.16], '10cm', [0.12, 0, 0]);
+  dim([-CAB_W / 2, rowY(1), 0.26], [0, rowY(1), 0.26], `${cabCm / 2}cm`, [0, 0.045, 0]);
+  dim([xSide, rowY(1) - DRAWER_H / 2, 0.20], [xSide, rowY(1) + DRAWER_H / 2, 0.20], '18cm', [0.11, 0, 0]);
+  dim([xSide, rowY(0) - DRAWER_H / 2, 0.20], [xSide, rowY(0) + DRAWER_H / 2, 0.20], '18cm', [0.11, 0, 0]);
+  dim([xSide, 0, 0.20], [xSide, BASE_H, 0.20], '10cm', [0.11, 0, 0]);
+  dim([-CAB_W / 2, 0.045, 0.26], [CAB_W / 2, 0.045, 0.26], `${cabCm}cm`, [0, -0.055, 0]);
+  dim([-(xLeg + 0.15), 0.03, -D_BOTTOM / 2], [-(xLeg + 0.15), 0.03, D_BOTTOM / 2], '43cm', [-0.10, -0.03, 0]);
+
+  unit.userData.dims = dims;
+  return unit;
 }
 
-dim([-W_TOP / 2, 1.88, Z_SHELF], [W_TOP / 2, 1.88, Z_SHELF], '84cm', [0, 0.05, 0]);
-dim([0.55, 1.83, -D_BOTTOM / 2], [0.55, 1.83, -D_BOTTOM / 2 + D_TOP], '25cm', [0.09, 0.03, 0]);
-dim([-0.28, SHELF_BOT, Z_SHELF + 0.1], [-0.28, SHELF_BOT - SHELF_GAP, Z_SHELF + 0.1], '10.5cm', [-0.13, 0, 0]);
-dim([-0.62, 0, 0.05], [-0.62, H_TOTAL, 0.05], '179cm', [-0.12, 0, 0]);
-dim([0.60, CAB_TOP, 0.08], [0.60, CAB_TOP + 1.195, 0.08], '119.5cm', [0.14, 0, 0]);
-dim([0.12, barY - BAR_H / 2, -0.16], [0.12, barY + BAR_H / 2, -0.16], '10cm', [0.12, 0, 0]);
-dim([-CAB_W / 2, rowY(1), 0.26], [0, rowY(1), 0.26], '40cm', [0, 0.045, 0]);
-dim([0.47, rowY(1) - DRAWER_H / 2, 0.20], [0.47, rowY(1) + DRAWER_H / 2, 0.20], '18cm', [0.11, 0, 0]);
-dim([0.47, rowY(0) - DRAWER_H / 2, 0.20], [0.47, rowY(0) + DRAWER_H / 2, 0.20], '18cm', [0.11, 0, 0]);
-dim([0.47, 0, 0.20], [0.47, BASE_H, 0.20], '10cm', [0.11, 0, 0]);
-dim([-CAB_W / 2, 0.045, 0.26], [CAB_W / 2, 0.045, 0.26], '80cm', [0, -0.055, 0]);
-dim([-0.55, 0.03, -D_BOTTOM / 2], [-0.55, 0.03, D_BOTTOM / 2], '43cm', [-0.10, -0.03, 0]);
+// ---------- build all models, wire the variant switcher ----------
+const variantsEl = document.getElementById('variants');
+const sizeLabel = document.getElementById('sizeLabel');
+for (const m of MODELS) {
+  m.unit = buildModel(m.wTop);
+  m.unit.visible = false;
+  scene.add(m.unit);
+  m.btn = document.createElement('button');
+  m.btn.textContent = m.name;
+  m.btn.onclick = () => setModel(m.id);
+  variantsEl.appendChild(m.btn);
+}
 
+let dimsOn = false;
+function setModel(id) {
+  for (const m of MODELS) {
+    m.unit.visible = m.id === id;
+    m.btn.classList.toggle('on', m.id === id);
+    if (m.id === id) sizeLabel.textContent = `${Math.round(m.wTop * 100)} × 43 × 179 cm`;
+  }
+}
+
+// ---------- dimensions toggle ----------
 const dimBtn = document.getElementById('dimBtn');
 function setDims(on) {
-  dims.visible = on;
+  dimsOn = on;
+  for (const m of MODELS) m.unit.userData.dims.visible = on;
   dimBtn.classList.toggle('on', on);
 }
-dimBtn.onclick = () => setDims(!dims.visible);
-setDims(new URLSearchParams(location.search).get('dims') === '1');
+dimBtn.onclick = () => setDims(!dimsOn);
 
+const params = new URLSearchParams(location.search);
+setModel(MODELS.some(m => m.id === params.get('model')) ? params.get('model') : 'a');
+setDims(params.get('dims') === '1');
+
+// ---------- camera view presets ----------
+const VIEWS = {
+  threeQ: [2.6, 1.7, 3.4],
+  front:  [0, 1.1, 4.1],
+  right:  [4.1, 1.1, 0],
+  back:   [0, 1.1, -4.1],
+  left:   [-4.1, 1.1, 0],
+  top:    [0, 5.0, 0.7],
+};
+let camTween = null;
+for (const b of document.querySelectorAll('#views button[data-view]')) {
+  b.onclick = () => {
+    camTween = { from: camera.position.clone(), to: new THREE.Vector3(...VIEWS[b.dataset.view]), t: 0 };
+  };
+}
+
+// ---------- reference photo overlay ----------
+const photo = document.getElementById('photo');
+document.getElementById('photoBtn').onclick = () => photo.classList.add('open');
+photo.onclick = () => photo.classList.remove('open');
 
 // ---------- render loop ----------
 const clock = new THREE.Clock();
