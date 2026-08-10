@@ -14,22 +14,17 @@
     backdrop-filter: blur(4px);
   }
   #hud b { color: #fff; }
-  #variants {
-    position: fixed; top: 14px; right: 16px; display: flex; gap: 8px;
-    font: 13px system-ui, sans-serif;
-  }
   #views {
     position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
     font: 13px system-ui, sans-serif; max-width: 96vw;
   }
-  #variants button, #views button {
+  #views button {
     color: #cfcfd6; background: rgba(0,0,0,.35); border: 1px solid #3a3a44;
-    padding: 8px 14px; border-radius: 10px; cursor: pointer;
+    padding: 8px 12px; border-radius: 10px; cursor: pointer;
     backdrop-filter: blur(4px); font: inherit;
   }
-  #views button { padding: 8px 12px; }
-  #variants button.on, #views button.on { color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25); }
+  #views button.on { color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25); }
   #photo {
     position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none;
     align-items: center; justify-content: center; z-index: 10; cursor: zoom-out;
@@ -39,12 +34,6 @@
   @media (max-width: 640px) {
     #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
     #hud .hint { display: none; }
-    #variants {
-      top: 56px; left: 50%; right: auto;
-      transform: translateX(-50%); font-size: 12px;
-      width: max-content; max-width: 96vw;
-    }
-    #variants button { padding: 7px 10px; }
     #views { bottom: 12px; font-size: 12px; }
     #views button { padding: 7px 10px; }
   }
@@ -56,10 +45,6 @@
   <b>Cherry Wood Hall Tree</b> — 84 × 43 × 179 cm<br>
   <span class="hint">Top shelf 84×25 · metal rail · 3 drawers (18 cm rows)<br>
   Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan</span>
-</div>
-<div id="variants">
-  <button id="vA" class="on">Model A · straight cabinet</button>
-  <button id="vB">Model B · slanted cabinet</button>
 </div>
 <div id="views">
   <button data-view="threeQ">¾ view</button>
@@ -260,7 +245,7 @@ box(W_TOP - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2,
 const barY = CAB_TOP + 1.195 * 0.58;   // within the 119.5cm open section
 box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01);
 
-// ---------- drawer cabinet: two variants, switchable in the UI ----------
+// ---------- drawer cabinet: 80w × 43d, two 18cm rows on a 10cm base ----------
 const CAB_W = 2 * xLeg - LEG_X - 0.008;   // cabinet body fits BETWEEN the legs
 const CAB_D = D_BOTTOM - 0.01;
 const bodyH = DRAWER_H * 2 + 0.02;
@@ -274,85 +259,24 @@ function pull(parent, x, y, z, tilt = 0) {
   parent.add(p);
 }
 
-// -- Model A: straight cabinet front (as the product photo)
-const cabA = new THREE.Group();
-unit.add(cabA);
+const cabinet = new THREE.Group();
+unit.add(cabinet);
 {
-  box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0, cabA);              // carcass
-  box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0, cabA); // top
-  box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0, cabA);               // bottom frame
+  box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0, cabinet);              // carcass
+  box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0, cabinet); // top
+  box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0, cabinet);               // bottom frame
 
   const zFace = CAB_D / 2 + 0.008;
   // bottom row: single full-width drawer
-  box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace, cabA);
-  pull(cabA, 0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace, cabinet);
+  pull(cabinet, 0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
   // top row: two half-width drawers with a divider between them
   for (const sx of [-1, 1]) {
-    box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace, cabA);
-    pull(cabA, sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+    box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace, cabinet);
+    pull(cabinet, sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
   }
-  box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004, cabA);
+  box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004, cabinet);
 }
-
-// -- Model B: cabinet front slanted at the SAME angle as the diagonal
-// legs, staying just behind their front plane so it never passes them.
-const cabB = new THREE.Group();
-unit.add(cabB);
-{
-  const zFront = y => zr0 + wH - tanT * y;   // front-face plane of the diagonals
-  const zCarc  = y => zFront(y) - 0.024;     // carcass front, recessed for the drawers
-  const zBk = -CAB_D / 2;
-  const tilt = Math.atan(tanT);
-
-  // carcass: slanted side profile extruded across the width (u = -z)
-  const cp = new THREE.Shape();
-  cp.moveTo(-zBk, BASE_H);
-  cp.lineTo(-zCarc(BASE_H), BASE_H);
-  cp.lineTo(-zCarc(CAB_TOP - 0.022), CAB_TOP - 0.022);
-  cp.lineTo(-zBk, CAB_TOP - 0.022);
-  cp.closePath();
-  const carc = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(cp, { depth: CAB_W, bevelEnabled: false }), cherry);
-  carc.rotation.y = Math.PI / 2;
-  carc.position.x = -CAB_W / 2;
-  carc.castShadow = carc.receiveShadow = true;
-  cabB.add(carc);
-
-  // top board follows the shallower top depth
-  const dTop = zCarc(CAB_TOP) - zBk + 0.02;
-  box(CAB_W + 0.006, 0.022, dTop, cherryLite, 0, CAB_TOP - 0.011, zBk + dTop / 2 - 0.01, cabB);
-
-  // slanted drawer fronts, faces parallel to the legs
-  const face = (w, x, r) => {
-    const yc = rowY(r);
-    const f = new THREE.Mesh(new THREE.BoxGeometry(w, DRAWER_H - 0.015, 0.018), cherryLite);
-    f.position.set(x, yc, zCarc(yc) + 0.009);
-    f.rotation.x = -tilt;
-    f.castShadow = true;
-    cabB.add(f);
-    const yp = yc + DRAWER_H / 2 - 0.035;
-    pull(cabB, x, yp, zCarc(yp) + 0.024, -tilt);
-  };
-  face(CAB_W - 0.025, 0, 0);                                // bottom: full width
-  for (const sx of [-1, 1]) face(CAB_W / 2 - 0.015, sx * CAB_W / 4, 1); // top: two
-  const dv = new THREE.Mesh(new THREE.BoxGeometry(0.012, DRAWER_H - 0.01, 0.02), cherryDark);
-  dv.position.set(0, rowY(1), zCarc(rowY(1)) + 0.002);
-  dv.rotation.x = -tilt;
-  cabB.add(dv);
-}
-
-// ---------- variant switcher ----------
-const btnA = document.getElementById('vA');
-const btnB = document.getElementById('vB');
-function setVariant(b) {
-  cabA.visible = !b;
-  cabB.visible = b;
-  btnA.classList.toggle('on', !b);
-  btnB.classList.toggle('on', b);
-}
-btnA.onclick = () => setVariant(false);
-btnB.onclick = () => setVariant(true);
-setVariant(new URLSearchParams(location.search).get('model') === 'b');
 
 // ---------- camera view presets ----------
 const VIEWS = {
