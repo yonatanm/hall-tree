@@ -16,6 +16,7 @@
   #hud b { color: #fff; }
   #variants {
     position: fixed; top: 14px; right: 16px; display: flex; gap: 8px;
+    flex-direction: column; align-items: flex-end;
     font: 13px system-ui, sans-serif;
   }
   #views {
@@ -41,8 +42,9 @@
     #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
     #hud .hint { display: none; }
     #variants {
-      top: 56px; left: 50%; right: auto;
+      top: 48px; left: 50%; right: auto;
       transform: translateX(-50%); font-size: 12px;
+      flex-direction: row; flex-wrap: wrap; justify-content: center;
       width: max-content; max-width: 96vw;
     }
     #variants button { padding: 7px 10px; }
@@ -55,7 +57,7 @@
 <div id="app"></div>
 <div id="hud">
   <b>Cherry Wood Hall Tree</b> — <span id="sizeLabel">84 × 43 × 179 cm</span><br>
-  <span class="hint">Top shelf · metal rail · 3 drawers (18 cm rows)<br>
+  <span class="hint">Top shelf · clothes rail · drawer cabinet base<br>
   Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan</span>
 </div>
 <div id="variants"></div>
@@ -96,10 +98,16 @@ const BAR_H     = 0.10;   // mid crossbar board height 10cm
 
 const CAB_TOP = BASE_H + DRAWER_H * 2 + 0.03;  // ≈0.49 — cabinet top surface
 
-// The models on offer: original 80cm cabinet (84cm overall), wide 100cm.
+// The models on offer: original 80cm cabinet (84cm overall), wide 100cm,
+// and one with an open cubby in place of the bottom drawer.
 const MODELS = [
   { id: 'a', name: 'Model A · 80cm',  wTop: 0.84 },
   { id: 'b', name: 'Model B · 100cm', wTop: 1.04 },
+  { id: 'c', name: 'Model C · open base', wTop: 0.84, openBottom: true },
+  { id: 'd', name: 'Model D · open through', wTop: 0.84, openBottom: true, noBack: true },
+  { id: 'e', name: 'Model E · bottom shelf', wTop: 0.84, openBottom: true, noBack: true, noSides: true },
+  { id: 'f', name: 'Model F · slatted shelf', wTop: 0.84, openBottom: true, noBack: true, noSides: true, slatted: true },
+  { id: 'g', name: 'Model G · leg bar', wTop: 0.84, legBar: true },
 ];
 
 // ---------- renderer / scene / camera ----------
@@ -186,7 +194,7 @@ function makeLabel(text) {
 }
 
 // ============ the hall tree, parameterized by overall width ============
-function buildModel(wTop) {
+function buildModel(wTop, opts = {}) {
   const unit = new THREE.Group();
 
   function box(w, h, d, mat, x, y, z, parent = unit) {
@@ -257,9 +265,19 @@ function buildModel(wTop) {
   // wooden back rail spanning between the leg tops
   box(wTop - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2, Z_BACK - BACK_D / 2 + 0.011);
 
-  // ---------- metal clothes rail (金屬掛衣杆), 10.5cm under the shelf ----------
-  // One chrome tube bent into a wide U, ends curving up into the shelf.
-  {
+  // ---------- clothes rail, 10.5cm under the shelf ----------
+  if (opts.legBar) {
+    // Model G: simple round wooden bar spanning between the two front
+    // diagonal planks, at the same height as the metal rail
+    const railY = SHELF_BOT - SHELF_GAP;
+    const zBar = zr0 - tanT * railY + wH / 2;   // diagonal plank center here
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, xLeg * 2, 20), cherryDark);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, railY, zBar);
+    bar.castShadow = true;
+    unit.add(bar);
+  } else {
+    // chrome tube bent into a wide U, ends curving up into the shelf
     const railY = SHELF_BOT - SHELF_GAP;
     const X0 = wTop / 2 - LEG_X - 0.06;
     const z = Z_SHELF;
@@ -297,14 +315,39 @@ function buildModel(wTop) {
     unit.add(p);
   }
 
-  box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0);              // carcass
   box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0); // top
-  box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0);               // bottom frame
+  if (opts.slatted) {
+    // Model F: slatted bottom shelf — narrow side-to-side slats carried
+    // by a rectangular frame (side + front/back rails)
+    const railW = 0.04, ySh = BASE_H + 0.015;
+    for (const sx of [-1, 1])                     // side rails
+      box(railW, 0.035, CAB_D, cherry, sx * (CAB_W - railW) / 2, ySh, 0);
+    for (const sz of [-1, 1])                     // front and back rails
+      box(CAB_W - railW * 2, 0.035, railW, cherry, 0, ySh, sz * (CAB_D - railW) / 2);
+    const N = 6, z0 = -(CAB_D / 2 - railW - 0.035);
+    for (let i = 0; i < N; i++)                   // slats, ends resting in the side rails
+      box(CAB_W - railW, 0.024, 0.035, cherryDark, 0, ySh + 0.004, z0 + i * (-2 * z0) / (N - 1));
+  } else {
+    box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0);             // bottom frame
+  }
 
   const zFace = CAB_D / 2 + 0.008;
-  // bottom row: single full-width drawer
-  box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace);
-  pull(0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  if (opts.openBottom) {
+    // bottom row is an open cubby: upper carcass carries the drawers,
+    // below it a niche with side walls and a back panel, front open
+    const yMid = BASE_H + 0.02 + DRAWER_H;     // ceiling of the cubby
+    box(CAB_W, bodyH - 0.02 - DRAWER_H, CAB_D, cherry, 0, (yMid + BASE_H + bodyH) / 2, 0);
+    if (!opts.noSides)  // Model E: bare shelf below — no side panels at all
+      for (const sx of [-1, 1])
+        box(0.018, DRAWER_H - 0.01, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, 0);
+    if (!opts.noBack)  // Model D: open all the way through, no back panel
+      box(CAB_W - 0.036, DRAWER_H - 0.01, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, -CAB_D / 2 + 0.02);
+  } else {
+    box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0);            // carcass
+    // bottom row: single full-width drawer
+    box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace);
+    pull(0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+  }
   // top row: two half-width drawers with a divider between them
   for (const sx of [-1, 1]) {
     box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace);
@@ -366,7 +409,7 @@ function buildModel(wTop) {
 const variantsEl = document.getElementById('variants');
 const sizeLabel = document.getElementById('sizeLabel');
 for (const m of MODELS) {
-  m.unit = buildModel(m.wTop);
+  m.unit = buildModel(m.wTop, m);
   m.unit.visible = false;
   scene.add(m.unit);
   m.btn = document.createElement('button');
