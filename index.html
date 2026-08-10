@@ -398,13 +398,14 @@ function makeLabel(text) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, c.width / 2, c.height / 2 + 2);
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: new THREE.CanvasTexture(c), depthTest: false, transparent: true,
-  }));
   const s = 0.0021;
-  spr.scale.set(c.width * s, c.height * s, 1);
-  spr.renderOrder = 3;
-  return spr;
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(c.width * s, c.height * s),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
+    }));
+  label.renderOrder = 3;
+  return label;
 }
 
 function dim(a, b, text, labelOff = [0, 0, 0]) {
@@ -424,7 +425,12 @@ function dim(a, b, text, labelOff = [0, 0, 0]) {
   }
   const label = makeLabel(text);
   label.position.copy(a.add(b).multiplyScalar(0.5)).add(new THREE.Vector3(...labelOff));
-  dims.add(label);
+  if (Math.abs(dir.z) > 0.9) label.rotation.y = Math.PI / 2;  // depth dims face sideways
+  const back = label.clone();          // mirror copy so text reads from both sides
+  back.rotation.y += Math.PI;
+  label.translateZ(0.001);
+  back.translateZ(0.001);
+  dims.add(label, back);
 }
 
 dim([-W_TOP / 2, 1.88, Z_SHELF], [W_TOP / 2, 1.88, Z_SHELF], '84cm', [0, 0.05, 0]);
