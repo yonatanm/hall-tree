@@ -18,25 +18,59 @@
     position: fixed; top: 14px; right: 16px; display: flex; gap: 8px;
     font: 13px system-ui, sans-serif;
   }
-  #variants button {
+  #views {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+    font: 13px system-ui, sans-serif; max-width: 96vw;
+  }
+  #variants button, #views button {
     color: #cfcfd6; background: rgba(0,0,0,.35); border: 1px solid #3a3a44;
     padding: 8px 14px; border-radius: 10px; cursor: pointer;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px); font: inherit;
   }
+  #views button { padding: 8px 12px; }
   #variants button.on { color: #fff; border-color: #b0622d; background: rgba(176,98,45,.25); }
+  #photo {
+    position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none;
+    align-items: center; justify-content: center; z-index: 10; cursor: zoom-out;
+  }
+  #photo.open { display: flex; }
+  #photo img { max-width: 92vw; max-height: 92vh; border-radius: 10px; }
+  @media (max-width: 640px) {
+    #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
+    #hud .hint { display: none; }
+    #variants {
+      top: 56px; left: 50%; right: auto;
+      transform: translateX(-50%); font-size: 12px;
+      width: max-content; max-width: 96vw;
+    }
+    #variants button { padding: 7px 10px; }
+    #views { bottom: 12px; font-size: 12px; }
+    #views button { padding: 7px 10px; }
+  }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="hud">
   <b>Cherry Wood Hall Tree</b> — 84 × 43 × 179 cm<br>
-  Top shelf 84×25 · metal rail · 3 drawers (18 cm rows)<br>
-  Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan
+  <span class="hint">Top shelf 84×25 · metal rail · 3 drawers (18 cm rows)<br>
+  Drag — rotate &nbsp;·&nbsp; Scroll — zoom &nbsp;·&nbsp; Right-drag — pan</span>
 </div>
 <div id="variants">
   <button id="vA" class="on">Model A · straight cabinet</button>
   <button id="vB">Model B · slanted cabinet</button>
 </div>
+<div id="views">
+  <button data-view="threeQ">¾ view</button>
+  <button data-view="front">Front</button>
+  <button data-view="right">Right</button>
+  <button data-view="back">Back</button>
+  <button data-view="left">Left</button>
+  <button data-view="top">Top</button>
+  <button id="photoBtn">📷 Photo</button>
+</div>
+<div id="photo"><img src="picture.jpeg" alt="Original product photo of the hall tree"></div>
 
 <script type="importmap">
 {
@@ -319,10 +353,40 @@ btnA.onclick = () => setVariant(false);
 btnB.onclick = () => setVariant(true);
 setVariant(new URLSearchParams(location.search).get('model') === 'b');
 
+// ---------- camera view presets ----------
+const VIEWS = {
+  threeQ: [2.6, 1.7, 3.4],
+  front:  [0, 1.1, 4.1],
+  right:  [4.1, 1.1, 0],
+  back:   [0, 1.1, -4.1],
+  left:   [-4.1, 1.1, 0],
+  top:    [0, 5.0, 0.7],
+};
+let camTween = null;
+for (const b of document.querySelectorAll('#views button[data-view]')) {
+  b.onclick = () => {
+    camTween = { from: camera.position.clone(), to: new THREE.Vector3(...VIEWS[b.dataset.view]), t: 0 };
+  };
+}
+
+// ---------- reference photo overlay ----------
+const photo = document.getElementById('photo');
+document.getElementById('photoBtn').onclick = () => photo.classList.add('open');
+photo.onclick = () => photo.classList.remove('open');
+
 
 // ---------- render loop ----------
+const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
+  if (camTween) {
+    camTween.t = Math.min(1, camTween.t + clock.getDelta() / 0.6);
+    const k = camTween.t * camTween.t * (3 - 2 * camTween.t);  // smoothstep ease
+    camera.position.lerpVectors(camTween.from, camTween.to, k);
+    if (camTween.t >= 1) camTween = null;
+  } else {
+    clock.getDelta();
+  }
   controls.update();
   renderer.render(scene, camera);
 }
