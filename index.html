@@ -444,8 +444,10 @@ function buildModel(wTop, opts = {}) {
     unit.add(p);
   }
 
+  // flush with the side panels — the top and sides form a clean box so
+  // the waterfall grain lines up around the corner
   reg(part('Cabinet top board', 'wrap'),
-    box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0));
+    box(CAB_W, 0.022, CAB_D, cherryLite, 0, CAB_TOP - 0.011, 0));
   if (opts.slatted) {
     // Model F: slatted bottom shelf — narrow side-to-side slats carried
     // by a rectangular frame (side + front/back rails)
