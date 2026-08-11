@@ -468,25 +468,22 @@ function buildModel(wTop, opts = {}) {
     // bottom row is an open cubby: upper carcass carries the drawers,
     // below it a niche with side walls and a back panel, front open
     const yMid = BASE_H + 0.02 + DRAWER_H;     // ceiling of the cubby
-    // drawer housing above the cubby: side panels, back panel, floor board
+    // drawer housing above the cubby: side panels, back panel, floor board.
+    // When the cubby has sides they are ONE continuous panel with the
+    // housing sides (full height); the floor board sits between them.
     const yTopB = CAB_TOP - 0.022;
     const houseHt = yTopB - yMid, houseMidY = (yMid + yTopB) / 2;
+    const sideY0 = opts.noSides ? yMid : BASE_H + 0.03;   // full height unless Model 5/6
     const pSidePanel = part('Cabinet side panel');
     for (const sx of [-1, 1])
-      reg(pSidePanel, box(0.018, houseHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), houseMidY, 0));
+      reg(pSidePanel, box(0.018, yTopB - sideY0, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), (sideY0 + yTopB) / 2, 0));
     reg(part('Cabinet back panel'),
       box(CAB_W - 0.036, houseHt, 0.014, cherryDark, 0, houseMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer floor board'),
-      box(CAB_W, 0.018, CAB_D, cherry, 0, yMid - 0.009, 0));
-    const cubbyHt = DRAWER_H - 0.028;          // cubby panels stop under the floor board
-    if (!opts.noSides) {  // Model E: bare shelf below — no side panels at all
-      const pSide = part('Cubby side panel');
-      for (const sx of [-1, 1])
-        reg(pSide, box(0.018, cubbyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), BASE_H + 0.03 + cubbyHt / 2, 0));
-    }
-    if (!opts.noBack)  // Model D: open all the way through, no back panel
+      box(opts.noSides ? CAB_W : CAB_W - 0.036, 0.018, CAB_D, cherry, 0, yMid - 0.009, 0));
+    if (!opts.noBack)  // Model 4: open all the way through, no back panel
       reg(part('Cubby back panel'),
-        box(CAB_W - 0.036, cubbyHt, 0.014, cherryDark, 0, BASE_H + 0.03 + cubbyHt / 2, -CAB_D / 2 + 0.02));
+        box(CAB_W - 0.036, DRAWER_H - 0.028, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.028) / 2, -CAB_D / 2 + 0.02));
   } else {
     // real construction between the bottom and top boards: two side
     // panels, a back panel, and a mid shelf separating the drawer rows
