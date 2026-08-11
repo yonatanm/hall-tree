@@ -405,7 +405,7 @@ function buildModel(wTop, opts = {}) {
     // below it a niche with side walls and a back panel, front open
     const yMid = BASE_H + 0.02 + DRAWER_H;     // ceiling of the cubby
     reg(part('Cabinet body'),
-      box(CAB_W, bodyH - 0.02 - DRAWER_H, CAB_D, cherry, 0, (yMid + BASE_H + bodyH) / 2, 0));
+      box(CAB_W, CAB_TOP - 0.022 - yMid, CAB_D, cherry, 0, (yMid + CAB_TOP - 0.022) / 2, 0));
     if (!opts.noSides) {  // Model E: bare shelf below — no side panels at all
       const pSide = part('Cubby side panel');
       for (const sx of [-1, 1])
@@ -415,8 +415,11 @@ function buildModel(wTop, opts = {}) {
       reg(part('Cubby back panel'),
         box(CAB_W - 0.036, DRAWER_H - 0.01, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, -CAB_D / 2 + 0.02));
   } else {
+    // carcass sits exactly BETWEEN the bottom board and the top board —
+    // no overlap, so each part's volume is real wood for the cutting plan
+    const yBody0 = BASE_H + 0.03, yBody1 = CAB_TOP - 0.022;
     reg(part('Cabinet body'),
-      box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0));
+      box(CAB_W, yBody1 - yBody0, CAB_D, cherry, 0, (yBody0 + yBody1) / 2, 0));
     // bottom row: single full-width drawer
     reg(part('Drawer front (wide)'),
       box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace));
