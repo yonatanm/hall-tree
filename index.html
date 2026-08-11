@@ -471,6 +471,7 @@ function buildModel(wTop, opts = {}) {
   }
 
   const zFace = CAB_D / 2 + 0.008;
+  let divY0 = 0;   // bottom of the drawer divider (set per construction)
   if (opts.openBottom) {
     // bottom row is an open cubby: upper carcass carries the drawers,
     // below it a niche with side walls and a back panel, front open
@@ -489,6 +490,7 @@ function buildModel(wTop, opts = {}) {
       box(CAB_W - 0.036, houseHt, 0.014, cherryDark, 0, houseMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer floor board'),
       box(opts.noSides ? CAB_W : CAB_W - 0.036, 0.018, CAB_D, cherry, 0, yMid - 0.009, 0));
+    divY0 = yMid;   // divider stands on the floor board
     if (!opts.noBack)  // Model 4: open all the way through, no back panel
       reg(part('Cubby back panel'),
         box(CAB_W - 0.036, DRAWER_H - 0.028, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.028) / 2, -CAB_D / 2 + 0.02));
@@ -505,6 +507,7 @@ function buildModel(wTop, opts = {}) {
       box(CAB_W - 0.036, bodyHt, 0.014, cherryDark, 0, bodyMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer mid shelf'),
       box(CAB_W - 0.036, 0.018, CAB_D - 0.034, cherry, 0, BASE_H + 0.02 + DRAWER_H, -0.003));
+    divY0 = BASE_H + 0.02 + DRAWER_H + 0.009;   // divider stands on the mid shelf
     // bottom row: single full-width drawer
     reg(part('Drawer front (wide)'),
       box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace));
@@ -516,8 +519,11 @@ function buildModel(wTop, opts = {}) {
     reg(pDrawerH, box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace));
     pull(sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
   }
+  // full-depth center partition between the two drawers — the drawer
+  // slides mount on its faces, so it runs back panel to front edge
+  const divY1 = CAB_TOP - 0.022;
   reg(part('Drawer divider'),
-    box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004));
+    box(0.018, divY1 - divY0, CAB_D - 0.016, cherry, 0, (divY0 + divY1) / 2, 0.008));
 
   // ---------- dimension overlay (sheet measurements, sticky labels) ----------
   const dims = new THREE.Group();
