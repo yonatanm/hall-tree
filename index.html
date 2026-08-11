@@ -231,12 +231,13 @@ function makeChip(letter) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(letter, 36, 38);
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: new THREE.CanvasTexture(c), depthTest: false, transparent: true,
-  }));
-  spr.scale.set(0.075, 0.075, 1);
-  spr.renderOrder = 4;
-  return spr;
+  const chip = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.075, 0.075),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
+    }));
+  chip.renderOrder = 4;
+  return chip;
 }
 
 // ============ the hall tree, parameterized by overall width ============
@@ -485,8 +486,10 @@ function buildModel(wTop, opts = {}) {
     for (const mesh of p.meshes) {
       const chip = makeChip(p.letter);
       chip.position.copy(new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()));
-      p.chips.push(chip);
-      chips.add(chip);
+      const rear = chip.clone();          // mirrored copy so it reads from behind
+      rear.rotation.y = Math.PI;
+      p.chips.push(chip, rear);
+      chips.add(chip, rear);
     }
   });
   unit.add(chips);
