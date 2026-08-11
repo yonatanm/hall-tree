@@ -404,22 +404,37 @@ function buildModel(wTop, opts = {}) {
     // bottom row is an open cubby: upper carcass carries the drawers,
     // below it a niche with side walls and a back panel, front open
     const yMid = BASE_H + 0.02 + DRAWER_H;     // ceiling of the cubby
-    reg(part('Cabinet body'),
-      box(CAB_W, CAB_TOP - 0.022 - yMid, CAB_D, cherry, 0, (yMid + CAB_TOP - 0.022) / 2, 0));
+    // drawer housing above the cubby: side panels, back panel, floor board
+    const yTopB = CAB_TOP - 0.022;
+    const houseHt = yTopB - yMid, houseMidY = (yMid + yTopB) / 2;
+    const pSidePanel = part('Cabinet side panel');
+    for (const sx of [-1, 1])
+      reg(pSidePanel, box(0.018, houseHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), houseMidY, 0));
+    reg(part('Cabinet back panel'),
+      box(CAB_W - 0.036, houseHt, 0.014, cherryDark, 0, houseMidY, -CAB_D / 2 + 0.007));
+    reg(part('Drawer floor board'),
+      box(CAB_W, 0.018, CAB_D, cherry, 0, yMid - 0.009, 0));
+    const cubbyHt = DRAWER_H - 0.028;          // cubby panels stop under the floor board
     if (!opts.noSides) {  // Model E: bare shelf below — no side panels at all
       const pSide = part('Cubby side panel');
       for (const sx of [-1, 1])
-        reg(pSide, box(0.018, DRAWER_H - 0.01, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, 0));
+        reg(pSide, box(0.018, cubbyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), BASE_H + 0.03 + cubbyHt / 2, 0));
     }
     if (!opts.noBack)  // Model D: open all the way through, no back panel
       reg(part('Cubby back panel'),
-        box(CAB_W - 0.036, DRAWER_H - 0.01, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, -CAB_D / 2 + 0.02));
+        box(CAB_W - 0.036, cubbyHt, 0.014, cherryDark, 0, BASE_H + 0.03 + cubbyHt / 2, -CAB_D / 2 + 0.02));
   } else {
-    // carcass sits exactly BETWEEN the bottom board and the top board —
-    // no overlap, so each part's volume is real wood for the cutting plan
+    // real construction between the bottom and top boards: two side
+    // panels, a back panel, and a mid shelf separating the drawer rows
     const yBody0 = BASE_H + 0.03, yBody1 = CAB_TOP - 0.022;
-    reg(part('Cabinet body'),
-      box(CAB_W, yBody1 - yBody0, CAB_D, cherry, 0, (yBody0 + yBody1) / 2, 0));
+    const bodyHt = yBody1 - yBody0, bodyMidY = (yBody0 + yBody1) / 2;
+    const pSidePanel = part('Cabinet side panel');
+    for (const sx of [-1, 1])
+      reg(pSidePanel, box(0.018, bodyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), bodyMidY, 0));
+    reg(part('Cabinet back panel'),
+      box(CAB_W - 0.036, bodyHt, 0.014, cherryDark, 0, bodyMidY, -CAB_D / 2 + 0.007));
+    reg(part('Drawer mid shelf'),
+      box(CAB_W - 0.036, 0.018, CAB_D - 0.034, cherry, 0, BASE_H + 0.02 + DRAWER_H, -0.003));
     // bottom row: single full-width drawer
     reg(part('Drawer front (wide)'),
       box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace));
