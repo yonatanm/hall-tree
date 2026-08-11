@@ -38,6 +38,23 @@
     padding: 8px 12px; border-radius: 10px; font: 13px system-ui, sans-serif;
     max-width: 92vw;
   }
+  #partsPanel {
+    position: fixed; left: 16px; bottom: 70px; display: none;
+    background: rgba(0,0,0,.55); border: 1px solid #3a3a44; border-radius: 10px;
+    padding: 8px; font: 13px/1.3 system-ui, sans-serif; color: #cfcfd6;
+    max-height: 52vh; overflow-y: auto; backdrop-filter: blur(4px);
+  }
+  #partsPanel.open { display: block; }
+  .prow { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; cursor: pointer; }
+  .prow:hover { background: rgba(255,255,255,.07); }
+  .prow.off { opacity: .4; }
+  .pletter {
+    width: 22px; height: 22px; border-radius: 50%; background: #b0622d; color: #fff;
+    font-weight: 700; font-size: 12px; display: flex; align-items: center;
+    justify-content: center; flex: none;
+  }
+  .pname { flex: 1; padding-right: 6px; }
+  .pcount { color: #8f8f99; }
   #photo {
     position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none;
     align-items: center; justify-content: center; z-index: 10; cursor: zoom-out;
@@ -49,6 +66,7 @@
     #hud .hint { display: none; }
     #variants { display: none; }      /* buttons replaced by the dropdown */
     #variantSel { display: block; }
+    #partsPanel { left: 12px; bottom: 100px; font-size: 12px; max-height: 40vh; }
     #views { bottom: 12px; font-size: 12px; }
     #views button { padding: 7px 10px; }
   }
@@ -71,8 +89,10 @@
   <button data-view="left">Left</button>
   <button data-view="top">Top</button>
   <button id="dimBtn">📏 Dimensions</button>
+  <button id="partsBtn">🔠 Parts</button>
   <button id="photoBtn">📷 Photo</button>
 </div>
+<div id="partsPanel"></div>
 <div id="photo"><img src="picture.jpeg" alt="Original product photo of the hall tree"></div>
 
 <script type="importmap">
@@ -195,9 +215,43 @@ function makeLabel(text) {
   return label;
 }
 
+function makeChip(letter) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 72;
+  const ctx = c.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(36, 36, 32, 0, Math.PI * 2);
+  ctx.fillStyle = '#b0622d';
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '700 38px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(letter, 36, 38);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(c), depthTest: false, transparent: true,
+  }));
+  spr.scale.set(0.075, 0.075, 1);
+  spr.renderOrder = 4;
+  return spr;
+}
+
 // ============ the hall tree, parameterized by overall width ============
 function buildModel(wTop, opts = {}) {
   const unit = new THREE.Group();
+
+  // parts registry: every mesh belongs to a named part; unique parts get
+  // letters (A, B, C…) for the parts panel and, later, the cutting plan
+  const parts = [];
+  function part(name) {
+    const p = { name, meshes: [], chips: [], hidden: false };
+    parts.push(p);
+    return p;
+  }
+  const reg = (p, m) => { p.meshes.push(m); return m; };
 
   function box(w, h, d, mat, x, y, z, parent = unit) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -244,28 +298,32 @@ function buildModel(wTop, opts = {}) {
   prof.closePath();
   const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
 
+  const pFront = part('Front leg (diagonal)');
+  const pBack  = part('Back leg');
   for (const sx of [-1, 1]) {
     // vertical back plank, full height
     const back = new THREE.Mesh(new THREE.BoxGeometry(LEG_X, H_TOTAL, BACK_D), cherry);
     back.position.set(sx * xLeg, H_TOTAL / 2, Z_BACK);
     back.castShadow = back.receiveShadow = true;
-    unit.add(back);
+    unit.add(reg(pBack, back));
 
     // slanted front plank with mitered cuts
     const front = new THREE.Mesh(frontGeo, cherry);
     front.rotation.y = Math.PI / 2;
     front.position.x = sx * xLeg - LEG_X / 2;
     front.castShadow = front.receiveShadow = true;
-    unit.add(front);
+    unit.add(reg(pFront, front));
   }
 
   // ---------- top shelf ----------
   // Board sits BETWEEN the legs, back edge at the back legs, extending
   // 25cm forward past the leg fronts.
   const Z_SHELF = -D_BOTTOM / 2 + D_TOP / 2;
-  box(wTop - 2 * LEG_X, SHELF_T, D_TOP, cherryLite, 0, SHELF_BOT + SHELF_T / 2, Z_SHELF);
+  reg(part('Top shelf'),
+    box(wTop - 2 * LEG_X, SHELF_T, D_TOP, cherryLite, 0, SHELF_BOT + SHELF_T / 2, Z_SHELF));
   // wooden back rail spanning between the leg tops
-  box(wTop - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2, Z_BACK - BACK_D / 2 + 0.011);
+  reg(part('Back rail'),
+    box(wTop - 2 * LEG_X, BACKRAIL_H, 0.022, cherry, 0, SHELF_TOP + BACKRAIL_H / 2, Z_BACK - BACK_D / 2 + 0.011));
 
   // ---------- clothes rail, 10.5cm under the shelf ----------
   if (opts.legBar) {
@@ -277,7 +335,7 @@ function buildModel(wTop, opts = {}) {
     bar.rotation.z = Math.PI / 2;
     bar.position.set(0, railY, zBar);
     bar.castShadow = true;
-    unit.add(bar);
+    unit.add(reg(part('Hanging bar (wood)'), bar));
   } else {
     // chrome tube bent into a wide U, ends curving up into the shelf
     const railY = SHELF_BOT - SHELF_GAP;
@@ -297,12 +355,13 @@ function buildModel(wTop, opts = {}) {
     const rail = new THREE.Mesh(
       new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.0085, 12), chrome);
     rail.castShadow = true;
-    unit.add(rail);
+    unit.add(reg(part('Clothes rail (metal)'), rail));
   }
 
   // ---------- mid crossbar: 10cm board between the back legs ----------
   const barY = CAB_TOP + 1.195 * 0.58;   // within the 119.5cm open section
-  box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01);
+  reg(part('Mid crossbar'),
+    box(xLeg * 2, BAR_H, 0.02, cherry, 0, barY, Z_BACK - BACK_D / 2 + 0.01));
 
   // ---------- drawer cabinet: two 18cm rows on a 10cm base ----------
   const CAB_W = 2 * xLeg - LEG_X - 0.008;   // cabinet body fits BETWEEN the legs
@@ -310,27 +369,33 @@ function buildModel(wTop, opts = {}) {
   const bodyH = DRAWER_H * 2 + 0.02;
   const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
 
+  const pPull = part('Drawer pull (metal)');
   function pull(x, y, z) {
     const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
     p.position.set(x, y, z);
     p.castShadow = true;
-    unit.add(p);
+    unit.add(reg(pPull, p));
   }
 
-  box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0); // top
+  reg(part('Cabinet top board'),
+    box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0));
   if (opts.slatted) {
     // Model F: slatted bottom shelf — narrow side-to-side slats carried
     // by a rectangular frame (side + front/back rails)
     const railW = 0.04, ySh = BASE_H + 0.015;
+    const pRailS = part('Shelf frame rail (side)');
+    const pRailF = part('Shelf frame rail (front/back)');
+    const pSlat  = part('Shelf slat');
     for (const sx of [-1, 1])                     // side rails
-      box(railW, 0.035, CAB_D, cherry, sx * (CAB_W - railW) / 2, ySh, 0);
+      reg(pRailS, box(railW, 0.035, CAB_D, cherry, sx * (CAB_W - railW) / 2, ySh, 0));
     for (const sz of [-1, 1])                     // front and back rails
-      box(CAB_W - railW * 2, 0.035, railW, cherry, 0, ySh, sz * (CAB_D - railW) / 2);
+      reg(pRailF, box(CAB_W - railW * 2, 0.035, railW, cherry, 0, ySh, sz * (CAB_D - railW) / 2));
     const N = 6, z0 = -(CAB_D / 2 - railW - 0.035);
     for (let i = 0; i < N; i++)                   // slats, ends resting in the side rails
-      box(CAB_W - railW, 0.024, 0.035, cherryDark, 0, ySh + 0.004, z0 + i * (-2 * z0) / (N - 1));
+      reg(pSlat, box(CAB_W - railW, 0.024, 0.035, cherryDark, 0, ySh + 0.004, z0 + i * (-2 * z0) / (N - 1)));
   } else {
-    box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0);             // bottom frame
+    reg(part(opts.openBottom ? 'Bottom shelf board' : 'Cabinet bottom board'),
+      box(CAB_W, 0.03, CAB_D, cherryDark, 0, BASE_H + 0.015, 0));
   }
 
   const zFace = CAB_D / 2 + 0.008;
@@ -338,24 +403,32 @@ function buildModel(wTop, opts = {}) {
     // bottom row is an open cubby: upper carcass carries the drawers,
     // below it a niche with side walls and a back panel, front open
     const yMid = BASE_H + 0.02 + DRAWER_H;     // ceiling of the cubby
-    box(CAB_W, bodyH - 0.02 - DRAWER_H, CAB_D, cherry, 0, (yMid + BASE_H + bodyH) / 2, 0);
-    if (!opts.noSides)  // Model E: bare shelf below — no side panels at all
+    reg(part('Cabinet body'),
+      box(CAB_W, bodyH - 0.02 - DRAWER_H, CAB_D, cherry, 0, (yMid + BASE_H + bodyH) / 2, 0));
+    if (!opts.noSides) {  // Model E: bare shelf below — no side panels at all
+      const pSide = part('Cubby side panel');
       for (const sx of [-1, 1])
-        box(0.018, DRAWER_H - 0.01, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, 0);
+        reg(pSide, box(0.018, DRAWER_H - 0.01, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, 0));
+    }
     if (!opts.noBack)  // Model D: open all the way through, no back panel
-      box(CAB_W - 0.036, DRAWER_H - 0.01, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, -CAB_D / 2 + 0.02);
+      reg(part('Cubby back panel'),
+        box(CAB_W - 0.036, DRAWER_H - 0.01, 0.014, cherryDark, 0, BASE_H + 0.03 + (DRAWER_H - 0.01) / 2, -CAB_D / 2 + 0.02));
   } else {
-    box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0);            // carcass
+    reg(part('Cabinet body'),
+      box(CAB_W, bodyH, CAB_D, cherry, 0, BASE_H + bodyH / 2, 0));
     // bottom row: single full-width drawer
-    box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace);
+    reg(part('Drawer front (wide)'),
+      box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace));
     pull(0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
   }
   // top row: two half-width drawers with a divider between them
+  const pDrawerH = part('Drawer front (half)');
   for (const sx of [-1, 1]) {
-    box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace);
+    reg(pDrawerH, box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace));
     pull(sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
   }
-  box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004);
+  reg(part('Drawer divider'),
+    box(0.012, DRAWER_H - 0.01, 0.02, cherryDark, 0, rowY(1), zFace - 0.004));
 
   // ---------- dimension overlay (sheet measurements, sticky labels) ----------
   const dims = new THREE.Group();
@@ -403,7 +476,24 @@ function buildModel(wTop, opts = {}) {
   dim([-CAB_W / 2, 0.045, 0.26], [CAB_W / 2, 0.045, 0.26], `${cabCm}cm`, [0, -0.055, 0]);
   dim([-(xLeg + 0.15), 0.03, -D_BOTTOM / 2], [-(xLeg + 0.15), 0.03, D_BOTTOM / 2], '43cm', [-0.10, -0.03, 0]);
 
+  // ---------- part letters + 3D letter badges ----------
+  unit.updateMatrixWorld(true);
+  const chips = new THREE.Group();
+  chips.visible = false;
+  parts.forEach((p, i) => {
+    p.letter = String.fromCharCode(65 + i);   // A, B, C…
+    for (const mesh of p.meshes) {
+      const chip = makeChip(p.letter);
+      chip.position.copy(new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()));
+      p.chips.push(chip);
+      chips.add(chip);
+    }
+  });
+  unit.add(chips);
+
   unit.userData.dims = dims;
+  unit.userData.parts = parts;
+  unit.userData.chips = chips;
   return unit;
 }
 
@@ -434,7 +524,40 @@ function setModel(id) {
     if (m.id === id) sizeLabel.textContent = `${Math.round(m.wTop * 100)} × 43 × 179 cm`;
   }
   variantSel.value = id;
+  renderPartsPanel();
 }
+
+// ---------- parts panel: letters, counts, per-part show/hide ----------
+const partsPanel = document.getElementById('partsPanel');
+const partsBtn = document.getElementById('partsBtn');
+let partsOn = false;
+
+function renderPartsPanel() {
+  const active = MODELS.find(m => m.unit.visible);
+  partsPanel.innerHTML = '';
+  if (!active) return;
+  for (const p of active.unit.userData.parts) {
+    const row = document.createElement('div');
+    row.className = 'prow' + (p.hidden ? ' off' : '');
+    row.innerHTML = `<span class="pletter">${p.letter}</span>` +
+      `<span class="pname">${p.name}</span><span class="pcount">×${p.meshes.length}</span>`;
+    row.onclick = () => {
+      p.hidden = !p.hidden;
+      for (const mesh of p.meshes) mesh.visible = !p.hidden;
+      for (const chip of p.chips) chip.visible = !p.hidden;
+      row.classList.toggle('off', p.hidden);
+    };
+    partsPanel.appendChild(row);
+  }
+}
+
+function setParts(on) {
+  partsOn = on;
+  for (const m of MODELS) m.unit.userData.chips.visible = on;
+  partsPanel.classList.toggle('open', on);
+  partsBtn.classList.toggle('on', on);
+}
+partsBtn.onclick = () => setParts(!partsOn);
 
 // ---------- dimensions toggle ----------
 const dimBtn = document.getElementById('dimBtn');
@@ -448,6 +571,7 @@ dimBtn.onclick = () => setDims(!dimsOn);
 const params = new URLSearchParams(location.search);
 setModel(MODELS.some(m => m.id === params.get('model')) ? params.get('model') : 'a');
 setDims(params.get('dims') === '1');
+setParts(params.get('parts') === '1');
 
 // ---------- camera view presets ----------
 const VIEWS = {
