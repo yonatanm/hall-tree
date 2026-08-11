@@ -74,6 +74,8 @@
     color: #cfcfd6; background: rgba(255,255,255,.07); border: 1px solid #3a3a44;
     padding: 8px 14px; border-radius: 10px; cursor: pointer; font: inherit;
   }
+  #cutplan .planTop { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+  #cutplan .planSnap { flex: 1 1 340px; min-width: 0; max-width: 620px; border-radius: 10px; background: #202027; }
   #cutplan table { border-collapse: collapse; margin: 10px 0 24px; }
   #cutplan th, #cutplan td {
     text-align: left; padding: 4px 16px 4px 0;
@@ -94,6 +96,7 @@
     #cutplan th, #cutplan td { border-bottom-color: #bbb; }
     #cutplan svg { background: #fff; border: 1px solid #999; border-radius: 0; }
     #cutplan .boardWrap { break-inside: avoid; }
+    #cutplan .planSnap { width: 260px; }
   }
   @media (max-width: 640px) {
     #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
@@ -171,7 +174,7 @@ const MODELS = [
 ];
 
 // ---------- renderer / scene / camera ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -248,6 +251,7 @@ function makeLabel(text) {
     new THREE.PlaneGeometry(c.width * s, c.height * s),
     new THREE.MeshBasicMaterial({
       map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
+      toneMapped: false,
     }));
   label.renderOrder = 3;
   return label;
@@ -273,6 +277,7 @@ function makeChip(letter) {
     new THREE.PlaneGeometry(0.075, 0.075),
     new THREE.MeshBasicMaterial({
       map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
+      toneMapped: false,
     }));
   chip.renderOrder = 4;
   return chip;
@@ -295,7 +300,7 @@ function buildModel(wTop, opts = {}) {
   const reg = (p, m, cut) => {
     const g = m.geometry && m.geometry.parameters;
     if (!cut && g && g.width !== undefined) cut = [g.width, g.height, g.depth];
-    if (cut) p.cuts.push(cut.map(v => v * 100).sort((a, b) => b - a)); // cm, L≥W≥T
+    if (cut) p.cuts.push(cut.map(v => Math.round(v * 200) / 2).sort((a, b) => b - a)); // cm in ½cm steps, L≥W≥T
     p.meshes.push(m);
     return m;
   };
@@ -706,6 +711,23 @@ function packBoards(rects) {
   return boards;
 }
 
+// off-screen snapshot of the model with part letters visible, for the plan
+function modelSnapshot(model) {
+  const W = 720, H = 960;
+  const cam = new THREE.PerspectiveCamera(45, W / H, 0.1, 100);
+  cam.position.set(1.7, 1.35, 2.3);
+  cam.lookAt(0, 0.92, 0);
+  const chips = model.unit.userData.chips;
+  const prevChips = chips.visible;
+  chips.visible = true;
+  renderer.setSize(W, H, false);
+  renderer.render(scene, cam);
+  const url = renderer.domElement.toDataURL('image/png');
+  chips.visible = prevChips;
+  renderer.setSize(innerWidth, innerHeight, false);
+  return url;
+}
+
 function renderPlan() {
   const model = MODELS.find(m => m.unit.visible);
   const { rows, rects } = expandParts(model);
@@ -720,12 +742,12 @@ function renderPlan() {
     <div class="meta">Stock beam: ${STOCK.L} × ${STOCK.W} × ${STOCK.T} cm · saw kerf ${STOCK.kerf * 10} mm ·
       <b>buy ${boards.length} beam${boards.length > 1 ? 's' : ''}</b> · offcut ${waste.toFixed(0)}%</div>`;
 
-  h += `<table><tr><th>Part</th><th>Cut size (cm)</th><th>Qty</th><th>Notes</th></tr>`;
+  h += `<div class="planTop"><table><tr><th>Part</th><th>Cut size (cm)</th><th>Qty</th><th>Notes</th></tr>`;
   for (const r of rows) {
     h += `<tr><td><span class="pletter" style="background:${colorFor(r.p.letter)}">${r.p.letter}</span>${r.p.name}</td>` +
       `<td>${fmt(r.L)} × ${fmt(r.W)} × ${fmt(r.T)}</td><td>×${r.qty}</td><td>${r.notes.join(' · ')}</td></tr>`;
   }
-  h += `</table>`;
+  h += `</table><img class="planSnap" alt="Model with lettered parts" src="${modelSnapshot(model)}"></div>`;
 
   boards.forEach((b, i) => {
     let svg = `<svg viewBox="-1 -1 ${STOCK.L + 2} ${STOCK.W + 2}">` +
