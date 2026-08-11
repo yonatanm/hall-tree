@@ -444,7 +444,7 @@ function buildModel(wTop, opts = {}) {
     unit.add(p);
   }
 
-  reg(part('Cabinet top board'),
+  reg(part('Cabinet top board', 'wrap'),
     box(CAB_W + 0.006, 0.022, CAB_D + 0.02, cherryLite, 0, CAB_TOP - 0.011, 0));
   if (opts.slatted) {
     // Model F: slatted bottom shelf — narrow side-to-side slats carried
@@ -479,7 +479,7 @@ function buildModel(wTop, opts = {}) {
     const pSidePanel = part('Cabinet side panel', 'wrap');
     for (const sx of [-1, 1])
       reg(pSidePanel, box(0.018, yTopB - sideY0, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), (sideY0 + yTopB) / 2, 0));
-    reg(part('Cabinet back panel', 'wrap'),
+    reg(part('Cabinet back panel'),
       box(CAB_W - 0.036, houseHt, 0.014, cherryDark, 0, houseMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer floor board'),
       box(opts.noSides ? CAB_W : CAB_W - 0.036, 0.018, CAB_D, cherry, 0, yMid - 0.009, 0));
@@ -494,7 +494,7 @@ function buildModel(wTop, opts = {}) {
     const pSidePanel = part('Cabinet side panel', 'wrap');
     for (const sx of [-1, 1])
       reg(pSidePanel, box(0.018, bodyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), bodyMidY, 0));
-    reg(part('Cabinet back panel', 'wrap'),
+    reg(part('Cabinet back panel'),
       box(CAB_W - 0.036, bodyHt, 0.014, cherryDark, 0, bodyMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer mid shelf'),
       box(CAB_W - 0.036, 0.018, CAB_D - 0.034, cherry, 0, BASE_H + 0.02 + DRAWER_H, -0.003));
@@ -716,24 +716,31 @@ function packBoards(rects) {
     runs.get(k).push(r);
   }
   for (const group of runs.values()) {
-    const letters = [...new Set(group.map(r => r.letter))]
-      .map(l => group.filter(r => r.letter === l));
-    const seq = letters.length === 2
-      ? [letters[0][0], ...letters[1], ...letters[0].slice(1)]
-      : group;
-    let b = null, runStart = 0;
+    // round-robin across the parts (side, top, side, top…) so every
+    // neighbouring pair on the beam is a grain-matched joint
+    const letterGroups = [...new Set(group.map(r => r.letter))]
+      .map(l => group.filter(r => r.letter === l))
+      .sort((a, b) => b.length - a.length);
+    const seq = [];
+    for (let i = 0; letterGroups.some(g => i < g.length); i++)
+      for (const g of letterGroups) if (i < g.length) seq.push(g[i]);
+
+    let b = null, runStart = 0, runW = 0;
+    const closeRun = () => { if (b) b.grainRuns.push({ from: runStart, to: b.cursor - STOCK.kerf, w: runW }); };
     for (const r of seq) {
       if (!b || b.cursor + r.L > STOCK.L) {
-        if (b) b.grainRuns.push({ from: runStart, to: b.cursor - STOCK.kerf, w: r.w });
+        closeRun();
         b = { sw: r.sw, cursor: 0, columns: [], grainRuns: [] };
         boards.push(b);
         runStart = 0;
+        runW = 0;
       }
       b.columns.push({ x: b.cursor, len: r.L, used: r.w + STOCK.kerf,
                        pieces: [{ ...r, x: b.cursor, y: 0 }] });
       b.cursor += r.L + STOCK.kerf;
+      runW = Math.max(runW, r.w);
     }
-    if (b) b.grainRuns.push({ from: runStart, to: b.cursor - STOCK.kerf, w: seq[0].w });
+    closeRun();
   }
 
   const sorted = placeable.filter(r => !r.grain).sort((a, b) => b.L - a.L);
