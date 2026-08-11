@@ -138,6 +138,7 @@
   <button data-view="back">Back</button>
   <button data-view="left">Left</button>
   <button data-view="top">Top</button>
+  <button id="drawerBtn">🗄 Drawers</button>
   <button id="dimBtn">📏 Dimensions</button>
   <button id="partsBtn">🔠 Parts</button>
   <button id="planBtn">🪚 Cut plan</button>
@@ -440,11 +441,27 @@ function buildModel(wTop, opts = {}) {
   const bodyH = DRAWER_H * 2 + 0.02;
   const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
 
-  function pull(x, y, z) {   // metal — excluded from the wood parts list
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
-    p.position.set(x, y, z);
-    p.castShadow = true;
-    unit.add(p);
+  // each drawer is a group (front + pull + box) that can slide open
+  const drawers = [];
+  const pBoxSide = part('Drawer box side');   // same size in every drawer
+  function drawer(pFront, pBack, pBottom, w, x, y) {
+    const zF = CAB_D / 2 + 0.008;   // front face plane
+    const g = new THREE.Group();
+    g.position.set(x, y, 0);
+    unit.add(g);
+    drawers.push(g);
+    reg(pFront, box(w, DRAWER_H - 0.015, 0.018, cherryLite, 0, 0, zF, g));
+    const pl = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
+    pl.position.set(0, DRAWER_H / 2 - 0.035, zF + 0.014);   // metal pull
+    pl.castShadow = true;
+    g.add(pl);
+    // the box behind the front: two sides, a back, a bottom
+    const bw = w - 0.04, bd = CAB_D - 0.07, bh = DRAWER_H - 0.055;
+    const zB = zF - 0.009 - bd / 2;
+    for (const s of [-1, 1])
+      reg(pBoxSide, box(0.012, bh, bd, cherry, s * (bw / 2 - 0.006), 0, zB, g));
+    reg(pBack, box(bw - 0.024, bh, 0.012, cherry, 0, 0, zB - bd / 2 + 0.006, g));
+    reg(pBottom, box(bw - 0.024, 0.01, bd - 0.024, cherryDark, 0, -bh / 2 + 0.005, zB, g));
   }
 
   // flush with the side panels — the top and sides form a clean box so
@@ -509,16 +526,15 @@ function buildModel(wTop, opts = {}) {
       box(CAB_W - 0.036, 0.018, CAB_D - 0.034, cherry, 0, BASE_H + 0.02 + DRAWER_H, -0.003));
     divY0 = BASE_H + 0.02 + DRAWER_H + 0.009;   // divider stands on the mid shelf
     // bottom row: single full-width drawer
-    reg(part('Drawer front (wide)'),
-      box(CAB_W - 0.025, DRAWER_H - 0.015, 0.018, cherryLite, 0, rowY(0), zFace));
-    pull(0, rowY(0) + DRAWER_H / 2 - 0.035, zFace + 0.014);
+    drawer(part('Drawer front (wide)'), part('Drawer box back (wide)'), part('Drawer box bottom (wide)'),
+      CAB_W - 0.025, 0, rowY(0));
   }
   // top row: two half-width drawers with a divider between them
   const pDrawerH = part('Drawer front (half)');
-  for (const sx of [-1, 1]) {
-    reg(pDrawerH, box(CAB_W / 2 - 0.015, DRAWER_H - 0.015, 0.018, cherryLite, sx * CAB_W / 4, rowY(1), zFace));
-    pull(sx * CAB_W / 4, rowY(1) + DRAWER_H / 2 - 0.035, zFace + 0.014);
-  }
+  const pBackH = part('Drawer box back');
+  const pBottomH = part('Drawer box bottom');
+  for (const sx of [-1, 1])
+    drawer(pDrawerH, pBackH, pBottomH, CAB_W / 2 - 0.015, sx * CAB_W / 4, rowY(1));
   // full-depth center partition between the two drawers — the drawer
   // slides mount on its faces, so it runs back panel to front edge
   const divY1 = CAB_TOP - 0.022;
@@ -591,6 +607,7 @@ function buildModel(wTop, opts = {}) {
   unit.userData.dims = dims;
   unit.userData.parts = parts;
   unit.userData.chips = chips;
+  unit.userData.drawers = drawers;
   return unit;
 }
 
@@ -656,6 +673,14 @@ function setParts(on) {
   partsBtn.classList.toggle('on', on);
 }
 partsBtn.onclick = () => setParts(!partsOn);
+
+// ---------- drawers open/close ----------
+const drawerBtn = document.getElementById('drawerBtn');
+var drawersOpen = false;
+drawerBtn.onclick = () => {
+  drawersOpen = !drawersOpen;
+  drawerBtn.classList.toggle('on', drawersOpen);
+};
 
 // ---------- dimensions toggle ----------
 const dimBtn = document.getElementById('dimBtn');
@@ -919,14 +944,18 @@ photo.onclick = () => photo.classList.remove('open');
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
+  const dt = clock.getDelta();
   if (camTween) {
-    camTween.t = Math.min(1, camTween.t + clock.getDelta() / 0.6);
+    camTween.t = Math.min(1, camTween.t + dt / 0.6);
     const k = camTween.t * camTween.t * (3 - 2 * camTween.t);  // smoothstep ease
     camera.position.lerpVectors(camTween.from, camTween.to, k);
     if (camTween.t >= 1) camTween = null;
-  } else {
-    clock.getDelta();
   }
+  // ease the drawers toward open/closed
+  const dz = drawersOpen ? 0.30 : 0;
+  for (const m of MODELS)
+    for (const d of m.unit.userData.drawers)
+      d.position.z += (dz - d.position.z) * Math.min(1, dt * 7);
   controls.update();
   renderer.render(scene, camera);
 }
