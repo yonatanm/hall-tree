@@ -87,6 +87,7 @@
   #cutplan .boardTitle { font-size: 13px; color: #9a9aa4; margin-bottom: 4px; }
   #cutplan svg { width: 100%; height: auto; background: #202027; border-radius: 6px; }
   @media print {
+    html, body { overflow: visible !important; height: auto !important; background: #fff !important; }
     body > *:not(#cutplan) { display: none !important; }
     #cutplan { position: static; background: #fff; color: #111; padding: 0; overflow: visible; }
     #cutplan.open { display: block; }
