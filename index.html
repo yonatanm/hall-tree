@@ -61,6 +61,40 @@
   }
   #photo.open { display: flex; }
   #photo img { max-width: 92vw; max-height: 92vh; border-radius: 10px; }
+  #cutplan {
+    position: fixed; inset: 0; z-index: 9; display: none; overflow-y: auto;
+    background: #17171c; color: #d6d6dd; font: 14px/1.5 system-ui, sans-serif;
+    padding: 22px 28px 60px;
+  }
+  #cutplan.open { display: block; }
+  #cutplan h2 { margin: 0 0 2px; color: #fff; }
+  #cutplan .meta { color: #9a9aa4; margin-bottom: 14px; font-size: 13px; }
+  #cutplan .planBtns { float: right; display: flex; gap: 8px; }
+  #cutplan .planBtns button {
+    color: #cfcfd6; background: rgba(255,255,255,.07); border: 1px solid #3a3a44;
+    padding: 8px 14px; border-radius: 10px; cursor: pointer; font: inherit;
+  }
+  #cutplan table { border-collapse: collapse; margin: 10px 0 24px; }
+  #cutplan th, #cutplan td {
+    text-align: left; padding: 4px 16px 4px 0;
+    border-bottom: 1px solid #2c2c33; font-size: 13px;
+  }
+  #cutplan th { color: #9a9aa4; font-weight: 600; }
+  #cutplan td .pletter { display: inline-flex; margin-right: 8px; vertical-align: middle; }
+  #cutplan .boardWrap { margin: 16px 0; }
+  #cutplan .boardTitle { font-size: 13px; color: #9a9aa4; margin-bottom: 4px; }
+  #cutplan svg { width: 100%; height: auto; background: #202027; border-radius: 6px; }
+  @media print {
+    body > *:not(#cutplan) { display: none !important; }
+    #cutplan { position: static; background: #fff; color: #111; padding: 0; overflow: visible; }
+    #cutplan.open { display: block; }
+    #cutplan h2 { color: #000; }
+    #cutplan .meta, #cutplan .boardTitle, #cutplan th { color: #444; }
+    #cutplan .planBtns { display: none; }
+    #cutplan th, #cutplan td { border-bottom-color: #bbb; }
+    #cutplan svg { background: #fff; border: 1px solid #999; border-radius: 0; }
+    #cutplan .boardWrap { break-inside: avoid; }
+  }
   @media (max-width: 640px) {
     #hud { font-size: 11px; padding: 8px 10px; right: 16px; }
     #hud .hint { display: none; }
@@ -90,9 +124,11 @@
   <button data-view="top">Top</button>
   <button id="dimBtn">📏 Dimensions</button>
   <button id="partsBtn">🔠 Parts</button>
+  <button id="planBtn">🪚 Cut plan</button>
   <button id="photoBtn">📷 Photo</button>
 </div>
 <div id="partsPanel"></div>
+<div id="cutplan"></div>
 <div id="photo"><img src="picture.jpeg" alt="Original product photo of the hall tree"></div>
 
 <script type="importmap">
@@ -250,11 +286,19 @@ function buildModel(wTop, opts = {}) {
   // letters (A, B, C…) for the parts panel and, later, the cutting plan
   const parts = [];
   function part(name) {
-    const p = { name, meshes: [], chips: [], hidden: false };
+    const p = { name, meshes: [], chips: [], cuts: [], hidden: false };
     parts.push(p);
     return p;
   }
-  const reg = (p, m) => { p.meshes.push(m); return m; };
+  // register a mesh under a part; cut = [dims in m] of the raw piece of
+  // wood it is cut from (auto-derived for plain boxes)
+  const reg = (p, m, cut) => {
+    const g = m.geometry && m.geometry.parameters;
+    if (!cut && g && g.width !== undefined) cut = [g.width, g.height, g.depth];
+    if (cut) p.cuts.push(cut.map(v => v * 100).sort((a, b) => b - a)); // cm, L≥W≥T
+    p.meshes.push(m);
+    return m;
+  };
 
   function box(w, h, d, mat, x, y, z, parent = unit) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -315,7 +359,8 @@ function buildModel(wTop, opts = {}) {
     front.rotation.y = Math.PI / 2;
     front.position.x = sx * xLeg - LEG_X / 2;
     front.castShadow = front.receiveShadow = true;
-    unit.add(reg(pFront, front));
+    unit.add(reg(pFront, front,
+      [DIAG_TOP / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
   }
 
   // ---------- top shelf ----------
@@ -338,7 +383,7 @@ function buildModel(wTop, opts = {}) {
     bar.rotation.z = Math.PI / 2;
     bar.position.set(0, railY, zBar);
     bar.castShadow = true;
-    unit.add(reg(part('Hanging bar (wood)'), bar));
+    unit.add(reg(part('Hanging bar (wood)'), bar, [xLeg * 2, 0.03, 0.03]));
   } else {
     // chrome tube bent into a wide U, ends curving up into the shelf
     const railY = SHELF_BOT - SHELF_GAP;
@@ -547,6 +592,7 @@ function setModel(id) {
   }
   variantSel.value = id;
   renderPartsPanel();
+  if (typeof planOn !== 'undefined' && planOn) renderPlan();
 }
 
 // ---------- parts panel: letters, counts, per-part show/hide ----------
@@ -597,6 +643,124 @@ const wanted = /^[a-g]$/.test(rawModel) ? String(rawModel.charCodeAt(0) - 96) : 
 setModel(MODELS.some(m => m.id === wanted) ? wanted : '1');
 setDims(params.get('dims') === '1');
 setParts(params.get('parts') === '1');
+
+// ---------- cutting plan: nest all wood parts onto stock boards ----------
+const STOCK = { L: 310, W: 20, T: 2.5, kerf: 0.4 };  // the beams you buy, cm
+const planEl = document.getElementById('cutplan');
+const planBtn = document.getElementById('planBtn');
+var planOn = false;   // var: setModel may run before this line executes
+
+const fmt = v => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
+const colorFor = letter => `hsl(${(letter.charCodeAt(0) - 65) * 47 % 360} 55% 55%)`;
+
+// pieces thicker than the stock become glue-up layers; wider than the
+// stock become edge-glued strips — every rectangle then fits the board
+function expandParts(model) {
+  const rows = [], rects = [];
+  for (const p of model.unit.userData.parts) {
+    if (!p.cuts.length) continue;
+    const [L, W, T] = p.cuts[0];
+    const qty = p.cuts.length;
+    const layers = Math.max(1, Math.ceil(T / STOCK.T - 1e-6));
+    const strips = Math.max(1, Math.ceil(W / STOCK.W - 1e-6));
+    const notes = [];
+    if (layers > 1) notes.push(`${fmt(T)}cm thick → ${layers}-layer glue-up`);
+    if (strips > 1) notes.push(`${fmt(W)}cm wide → ${strips} strips edge-glued`);
+    rows.push({ p, L, W, T, qty, notes });
+    for (let q = 0; q < qty * layers * strips; q++)
+      rects.push({ letter: p.letter, L, w: W / strips });
+  }
+  return { rows, rects };
+}
+
+// greedy column packing: pieces sorted by length fill 20cm-wide columns
+// along the board, a saw kerf between every neighbouring cut
+function packBoards(rects) {
+  const sorted = [...rects].sort((a, b) => b.L - a.L);
+  const boards = [];
+  for (const r of sorted) {
+    let placed = false;
+    for (const b of boards) {
+      for (const col of b.columns) {
+        if (r.L <= col.len && col.used + r.w <= STOCK.W + 1e-6) {
+          col.pieces.push({ ...r, x: col.x, y: col.used });
+          col.used += r.w + STOCK.kerf;
+          placed = true;
+          break;
+        }
+      }
+      if (placed) break;
+      if (b.cursor + r.L <= STOCK.L) {
+        b.columns.push({ x: b.cursor, len: r.L, used: r.w + STOCK.kerf,
+                         pieces: [{ ...r, x: b.cursor, y: 0 }] });
+        b.cursor += r.L + STOCK.kerf;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      boards.push({ cursor: r.L + STOCK.kerf,
+        columns: [{ x: 0, len: r.L, used: r.w + STOCK.kerf, pieces: [{ ...r, x: 0, y: 0 }] }] });
+    }
+  }
+  return boards;
+}
+
+function renderPlan() {
+  const model = MODELS.find(m => m.unit.visible);
+  const { rows, rects } = expandParts(model);
+  const boards = packBoards(rects);
+  const usedArea = rects.reduce((s, r) => s + r.L * r.w, 0);
+  const waste = 100 * (1 - usedArea / (boards.length * STOCK.L * STOCK.W));
+
+  let h = `<div class="planBtns">
+      <button onclick="print()">🖨 Print</button>
+      <button id="planClose">✕ Close</button></div>
+    <h2>Cutting plan — ${model.name}</h2>
+    <div class="meta">Stock beam: ${STOCK.L} × ${STOCK.W} × ${STOCK.T} cm · saw kerf ${STOCK.kerf * 10} mm ·
+      <b>buy ${boards.length} beam${boards.length > 1 ? 's' : ''}</b> · offcut ${waste.toFixed(0)}%</div>`;
+
+  h += `<table><tr><th>Part</th><th>Cut size (cm)</th><th>Qty</th><th>Notes</th></tr>`;
+  for (const r of rows) {
+    h += `<tr><td><span class="pletter" style="background:${colorFor(r.p.letter)}">${r.p.letter}</span>${r.p.name}</td>` +
+      `<td>${fmt(r.L)} × ${fmt(r.W)} × ${fmt(r.T)}</td><td>×${r.qty}</td><td>${r.notes.join(' · ')}</td></tr>`;
+  }
+  h += `</table>`;
+
+  boards.forEach((b, i) => {
+    let svg = `<svg viewBox="-1 -1 ${STOCK.L + 2} ${STOCK.W + 2}">` +
+      `<rect x="0" y="0" width="${STOCK.L}" height="${STOCK.W}" fill="none" stroke="#777" stroke-width="0.4"/>`;
+    let area = 0;
+    for (const col of b.columns) {
+      for (const pc of col.pieces) {
+        area += pc.L * pc.w;
+        svg += `<rect x="${pc.x}" y="${pc.y}" width="${pc.L}" height="${pc.w}" ` +
+          `fill="${colorFor(pc.letter)}" fill-opacity="0.75" stroke="#111" stroke-width="0.3"/>`;
+        const fs = Math.min(6, pc.w * 0.75);
+        if (fs > 1.6) {
+          svg += `<text x="${pc.x + pc.L / 2}" y="${pc.y + pc.w / 2}" font-size="${fs}" ` +
+            `fill="#fff" text-anchor="middle" dominant-baseline="central">` +
+            `${pc.letter}${pc.L > 24 && fs > 2.6 ? ` · ${fmt(pc.L)}×${fmt(pc.w)}` : ''}</text>`;
+        }
+      }
+    }
+    svg += `</svg>`;
+    h += `<div class="boardWrap"><div class="boardTitle">Beam ${i + 1} of ${boards.length} — ` +
+      `${(100 * area / (STOCK.L * STOCK.W)).toFixed(0)}% used</div>${svg}</div>`;
+  });
+
+  planEl.innerHTML = h;
+  document.getElementById('planClose').onclick = () => setPlan(false);
+}
+
+function setPlan(on) {
+  planOn = on;
+  if (on) renderPlan();
+  planEl.classList.toggle('open', on);
+  planBtn.classList.toggle('on', on);
+}
+planBtn.onclick = () => setPlan(!planOn);
+setPlan(new URLSearchParams(location.search).get('plan') === '1');
 
 // ---------- camera view presets ----------
 const VIEWS = {
