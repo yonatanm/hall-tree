@@ -303,8 +303,10 @@ function buildModel(wTop, opts = {}) {
   // parts registry: every mesh belongs to a named part; unique parts get
   // letters (A, B, C…) for the parts panel and, later, the cutting plan
   const parts = [];
-  function part(name) {
-    const p = { name, meshes: [], chips: [], cuts: [], hidden: false };
+  function part(name, grain) {
+    // parts sharing a `grain` tag are cut consecutively from one beam so
+    // the wood grain flows continuously across them (waterfall match)
+    const p = { name, grain, meshes: [], chips: [], cuts: [], hidden: false };
     parts.push(p);
     return p;
   }
@@ -474,10 +476,10 @@ function buildModel(wTop, opts = {}) {
     const yTopB = CAB_TOP - 0.022;
     const houseHt = yTopB - yMid, houseMidY = (yMid + yTopB) / 2;
     const sideY0 = opts.noSides ? yMid : BASE_H + 0.03;   // full height unless Model 5/6
-    const pSidePanel = part('Cabinet side panel');
+    const pSidePanel = part('Cabinet side panel', 'wrap');
     for (const sx of [-1, 1])
       reg(pSidePanel, box(0.018, yTopB - sideY0, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), (sideY0 + yTopB) / 2, 0));
-    reg(part('Cabinet back panel'),
+    reg(part('Cabinet back panel', 'wrap'),
       box(CAB_W - 0.036, houseHt, 0.014, cherryDark, 0, houseMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer floor board'),
       box(opts.noSides ? CAB_W : CAB_W - 0.036, 0.018, CAB_D, cherry, 0, yMid - 0.009, 0));
@@ -489,10 +491,10 @@ function buildModel(wTop, opts = {}) {
     // panels, a back panel, and a mid shelf separating the drawer rows
     const yBody0 = BASE_H + 0.03, yBody1 = CAB_TOP - 0.022;
     const bodyHt = yBody1 - yBody0, bodyMidY = (yBody0 + yBody1) / 2;
-    const pSidePanel = part('Cabinet side panel');
+    const pSidePanel = part('Cabinet side panel', 'wrap');
     for (const sx of [-1, 1])
       reg(pSidePanel, box(0.018, bodyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), bodyMidY, 0));
-    reg(part('Cabinet back panel'),
+    reg(part('Cabinet back panel', 'wrap'),
       box(CAB_W - 0.036, bodyHt, 0.014, cherryDark, 0, bodyMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer mid shelf'),
       box(CAB_W - 0.036, 0.018, CAB_D - 0.034, cherry, 0, BASE_H + 0.02 + DRAWER_H, -0.003));
@@ -689,10 +691,11 @@ function expandParts(model) {
     if (layers > 1) notes.push(`${fmt(T)}cm thick → ${layers}-layer glue-up`);
     if (pick.strips > 1) notes.push(`${fmt(W)}cm wide → ${pick.strips} strips edge-glued`);
     if (widths.length > 1) notes.push(`${fmt(pick.sw)}cm beam`);
+    if (p.grain) notes.push('↔ continuous grain run');
     if (L > STOCK.L) notes.push(`⚠ longer than the beam (${fmt(STOCK.L)}cm)`);
     rows.push({ p, L, W, T, qty, notes });
     for (let q = 0; q < qty * layers * pick.strips; q++)
-      rects.push({ letter: p.letter, L, w: W / pick.strips, sw: pick.sw });
+      rects.push({ letter: p.letter, L, w: W / pick.strips, sw: pick.sw, grain: p.grain });
   }
   return { rows, rects };
 }
@@ -701,7 +704,39 @@ function expandParts(model) {
 // along the board, a saw kerf between every neighbouring cut
 function packBoards(rects) {
   const boards = [];
-  const sorted = [...rects].filter(r => r.L <= STOCK.L).sort((a, b) => b.L - a.L);
+  const placeable = rects.filter(r => r.L <= STOCK.L);
+
+  // grain runs first: pieces of a run go consecutively along one beam,
+  // ordered side · back · side so the grain wraps around the cabinet
+  const runs = new Map();
+  for (const r of placeable) {
+    if (!r.grain) continue;
+    const k = r.grain + '|' + r.sw;
+    if (!runs.has(k)) runs.set(k, []);
+    runs.get(k).push(r);
+  }
+  for (const group of runs.values()) {
+    const letters = [...new Set(group.map(r => r.letter))]
+      .map(l => group.filter(r => r.letter === l));
+    const seq = letters.length === 2
+      ? [letters[0][0], ...letters[1], ...letters[0].slice(1)]
+      : group;
+    let b = null, runStart = 0;
+    for (const r of seq) {
+      if (!b || b.cursor + r.L > STOCK.L) {
+        if (b) b.grainRuns.push({ from: runStart, to: b.cursor - STOCK.kerf, w: r.w });
+        b = { sw: r.sw, cursor: 0, columns: [], grainRuns: [] };
+        boards.push(b);
+        runStart = 0;
+      }
+      b.columns.push({ x: b.cursor, len: r.L, used: r.w + STOCK.kerf,
+                       pieces: [{ ...r, x: b.cursor, y: 0 }] });
+      b.cursor += r.L + STOCK.kerf;
+    }
+    if (b) b.grainRuns.push({ from: runStart, to: b.cursor - STOCK.kerf, w: seq[0].w });
+  }
+
+  const sorted = placeable.filter(r => !r.grain).sort((a, b) => b.L - a.L);
   for (const r of sorted) {
     let placed = false;
     for (const b of boards) {
@@ -724,7 +759,7 @@ function packBoards(rects) {
       }
     }
     if (!placed) {
-      boards.push({ sw: r.sw, cursor: r.L + STOCK.kerf,
+      boards.push({ sw: r.sw, cursor: r.L + STOCK.kerf, grainRuns: [],
         columns: [{ x: 0, len: r.L, used: r.w + STOCK.kerf, pieces: [{ ...r, x: 0, y: 0 }] }] });
     }
   }
@@ -801,6 +836,13 @@ function renderPlan() {
             `${pc.letter}${pc.L > 24 && fs > 2.6 ? ` · ${fmt(pc.L)}×${fmt(pc.w)}` : ''}</text>`;
         }
       }
+    }
+    for (const run of b.grainRuns || []) {   // mark grain-matched runs
+      const y = run.w + 1.1;
+      svg += `<line x1="${run.from}" y1="${y}" x2="${run.to}" y2="${y}" ` +
+        `stroke="#ffd9a0" stroke-width="0.45" stroke-dasharray="2.5 1.3"/>` +
+        `<text x="${(run.from + run.to) / 2}" y="${y + 2.4}" font-size="2.3" ` +
+        `fill="#ffd9a0" text-anchor="middle">→ continuous grain — keep this order →</text>`;
     }
     svg += `</svg>`;
     h += `<div class="boardWrap"><div class="boardTitle">Beam ${i + 1} of ${boards.length}` +
