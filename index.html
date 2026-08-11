@@ -314,8 +314,11 @@ function buildModel(wTop, opts = {}) {
   // wood it is cut from (auto-derived for plain boxes)
   const reg = (p, m, cut) => {
     const g = m.geometry && m.geometry.parameters;
-    if (!cut && g && g.width !== undefined) cut = [g.width, g.height, g.depth];
-    if (cut) p.cuts.push(cut.map(v => Math.round(v * 200) / 2).sort((a, b) => b - a)); // cm in ½cm steps, L≥W≥T
+    // auto-derived box dims are sorted longest-first; EXPLICIT cuts are
+    // taken as-is, with dims[0] = length along the grain
+    if (!cut && g && g.width !== undefined)
+      cut = [g.width, g.height, g.depth].sort((a, b) => b - a);
+    if (cut) p.cuts.push(cut.map(v => Math.round(v * 200) / 2)); // cm in ½cm steps
     p.meshes.push(m);
     return m;
   };
@@ -479,8 +482,9 @@ function buildModel(wTop, opts = {}) {
     const houseHt = yTopB - yMid, houseMidY = (yMid + yTopB) / 2;
     const sideY0 = opts.noSides ? yMid : BASE_H + 0.03;   // full height unless Model 5/6
     const pSidePanel = part('Cabinet side panel', 'wrap');
-    for (const sx of [-1, 1])
-      reg(pSidePanel, box(0.018, yTopB - sideY0, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), (sideY0 + yTopB) / 2, 0));
+    for (const sx of [-1, 1])   // grain runs VERTICALLY (waterfall from the top board)
+      reg(pSidePanel, box(0.018, yTopB - sideY0, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), (sideY0 + yTopB) / 2, 0),
+        [yTopB - sideY0, CAB_D, 0.018]);
     reg(part('Cabinet back panel'),
       box(CAB_W - 0.036, houseHt, 0.014, cherryDark, 0, houseMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer floor board'),
@@ -494,8 +498,9 @@ function buildModel(wTop, opts = {}) {
     const yBody0 = BASE_H + 0.03, yBody1 = CAB_TOP - 0.022;
     const bodyHt = yBody1 - yBody0, bodyMidY = (yBody0 + yBody1) / 2;
     const pSidePanel = part('Cabinet side panel', 'wrap');
-    for (const sx of [-1, 1])
-      reg(pSidePanel, box(0.018, bodyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), bodyMidY, 0));
+    for (const sx of [-1, 1])   // grain runs VERTICALLY (waterfall from the top board)
+      reg(pSidePanel, box(0.018, bodyHt, CAB_D, cherry, sx * (CAB_W / 2 - 0.009), bodyMidY, 0),
+        [bodyHt, CAB_D, 0.018]);
     reg(part('Cabinet back panel'),
       box(CAB_W - 0.036, bodyHt, 0.014, cherryDark, 0, bodyMidY, -CAB_D / 2 + 0.007));
     reg(part('Drawer mid shelf'),
