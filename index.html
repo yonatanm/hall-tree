@@ -122,14 +122,15 @@ const CAB_TOP = BASE_H + DRAWER_H * 2 + 0.03;  // ≈0.49 — cabinet top surfac
 
 // The models on offer: original 80cm cabinet (84cm overall), wide 100cm,
 // and one with an open cubby in place of the bottom drawer.
+// Models are numbered (letters are reserved for the parts).
 const MODELS = [
-  { id: 'a', name: 'Model A · 80cm',  wTop: 0.84 },
-  { id: 'b', name: 'Model B · 100cm', wTop: 1.04 },
-  { id: 'c', name: 'Model C · open base', wTop: 0.84, openBottom: true },
-  { id: 'd', name: 'Model D · open through', wTop: 0.84, openBottom: true, noBack: true },
-  { id: 'e', name: 'Model E · bottom shelf', wTop: 0.84, openBottom: true, noBack: true, noSides: true },
-  { id: 'f', name: 'Model F · slatted shelf', wTop: 0.84, openBottom: true, noBack: true, noSides: true, slatted: true },
-  { id: 'g', name: 'Model G · leg bar', wTop: 0.84, legBar: true },
+  { id: '1', name: 'Model 1 · 80cm',  wTop: 0.84 },
+  { id: '2', name: 'Model 2 · 100cm', wTop: 1.04 },
+  { id: '3', name: 'Model 3 · open base', wTop: 0.84, openBottom: true },
+  { id: '4', name: 'Model 4 · open through', wTop: 0.84, openBottom: true, noBack: true },
+  { id: '5', name: 'Model 5 · bottom shelf', wTop: 0.84, openBottom: true, noBack: true, noSides: true },
+  { id: '6', name: 'Model 6 · slatted shelf', wTop: 0.84, openBottom: true, noBack: true, noSides: true, slatted: true },
+  { id: '7', name: 'Model 7 · leg bar', wTop: 0.84, legBar: true },
 ];
 
 // ---------- renderer / scene / camera ----------
@@ -356,7 +357,7 @@ function buildModel(wTop, opts = {}) {
     const rail = new THREE.Mesh(
       new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.0085, 12), chrome);
     rail.castShadow = true;
-    unit.add(reg(part('Clothes rail (metal)'), rail));
+    unit.add(rail);   // metal — excluded from the wood parts list
   }
 
   // ---------- mid crossbar: 10cm board between the back legs ----------
@@ -370,12 +371,11 @@ function buildModel(wTop, opts = {}) {
   const bodyH = DRAWER_H * 2 + 0.02;
   const rowY = r => BASE_H + 0.02 + DRAWER_H * r + DRAWER_H / 2;
 
-  const pPull = part('Drawer pull (metal)');
-  function pull(x, y, z) {
+  function pull(x, y, z) {   // metal — excluded from the wood parts list
     const p = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
     p.position.set(x, y, z);
     p.castShadow = true;
-    unit.add(reg(pPull, p));
+    unit.add(p);
   }
 
   reg(part('Cabinet top board'),
@@ -590,7 +590,10 @@ function setDims(on) {
 dimBtn.onclick = () => setDims(!dimsOn);
 
 const params = new URLSearchParams(location.search);
-setModel(MODELS.some(m => m.id === params.get('model')) ? params.get('model') : 'a');
+// accept legacy letter ids (?model=b) by mapping a-g onto 1-7
+const rawModel = (params.get('model') || '').toLowerCase();
+const wanted = /^[a-g]$/.test(rawModel) ? String(rawModel.charCodeAt(0) - 96) : rawModel;
+setModel(MODELS.some(m => m.id === wanted) ? wanted : '1');
 setDims(params.get('dims') === '1');
 setParts(params.get('parts') === '1');
 
