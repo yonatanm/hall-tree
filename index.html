@@ -233,6 +233,8 @@ const cherryDark = new THREE.MeshStandardMaterial({ color: 0x94491f, roughness: 
 const cherryLite = new THREE.MeshStandardMaterial({ color: 0xc47a3e, roughness: 0.55, metalness: 0.02 });
 const brass      = new THREE.MeshStandardMaterial({ color: 0xd9c391, roughness: 0.3,  metalness: 0.85 });
 const chrome     = new THREE.MeshStandardMaterial({ color: 0xd4d7db, roughness: 0.22, metalness: 0.92 });
+const paulownia  = new THREE.MeshStandardMaterial({ color: 0xd8c8a4, roughness: 0.8,  metalness: 0.0 });
+const grooveMat  = new THREE.MeshStandardMaterial({ color: 0x40260f, roughness: 0.9,  metalness: 0.0 });
 const floorMat   = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.95 });
 
 const dimMat = new THREE.LineBasicMaterial({
@@ -347,25 +349,26 @@ function buildModel(wTop, opts = {}) {
   const SHELF_TOP = H_TOTAL - 0.015 - BACKRAIL_H; // shelf sits ~9cm below leg tops
   const SHELF_BOT = SHELF_TOP - SHELF_T;
 
-  // How the two planks join (from the product photos): the diagonal rises
-  // PAST the shelf and dies into the back leg near its very top with a
-  // PLUMB cut — both tops end level; a slim wedge of daylight opens below.
+  // Top joinery (from the product detail photos): the diagonal NEVER
+  // touches the back leg — it rises past the shelf with constant daylight
+  // between them, tip cut flat at the same height as the leg top. The
+  // joint is the shelf clamped between the two members plus a small
+  // spacer block bridging the gap just below the shelf.
   const ZF = Z_BACK + BACK_D / 2;              // front plane of the back leg
-  const DIAG_TOP = H_TOTAL;                    // diagonal top flush with the leg top
-  const TOP_W = 0.035;                         // plank width remaining beside the leg top
-  let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - TOP_W) / DIAG_TOP;
+  const DIAG_TOP = H_TOTAL;                    // tip flush with the back-leg top
+  const GAP_TOP = 0.022;                       // daylight at the very top
+  let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - GAP_TOP) / DIAG_TOP;
   const wH  = FRONT_D / Math.cos(Math.atan(tanT));  // horizontal plank width
   const zr0 = D_BOTTOM / 2 - wH;               // rear bottom corner at the floor
-  tanT = (zr0 + wH - ZF - TOP_W) / DIAG_TOP;
-  const yPl = (zr0 - ZF) / tanT;               // plumb joint starts here (≈ shelf level)
+  tanT = (zr0 - ZF - GAP_TOP) / DIAG_TOP;
 
   // side profile in (z, y); u = -z so the extrusion axis maps to world +x
+  // — a clean parallelogram: flat foot on the floor, flat top edge
   const prof = new THREE.Shape();
   prof.moveTo(-zr0, 0);                                 // rear bottom
   prof.lineTo(-(zr0 + wH), 0);                          // front bottom
-  prof.lineTo(-(zr0 + wH - tanT * DIAG_TOP), DIAG_TOP); // front top, beside the leg top
-  prof.lineTo(-ZF, DIAG_TOP);                           // horizontal top edge
-  prof.lineTo(-ZF, yPl);                                // plumb face against the leg
+  prof.lineTo(-(zr0 + wH - tanT * DIAG_TOP), DIAG_TOP); // front top
+  prof.lineTo(-(zr0 - tanT * DIAG_TOP), DIAG_TOP);      // rear top
   prof.closePath();
   const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
 
@@ -385,6 +388,34 @@ function buildModel(wTop, opts = {}) {
     front.castShadow = front.receiveShadow = true;
     unit.add(reg(pFront, front,
       [DIAG_TOP / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
+  }
+
+  // spacer block bridging the daylight between diagonal and back leg,
+  // just below the shelf (the joint's second anchor in the photos)
+  {
+    const ySpB = 1.55;
+    const zSp = zr0 - tanT * ySpB;             // rear face of the diagonal here
+    const spLen = zSp - ZF + 0.02;             // embedded 1cm into each member
+    const pSp = part('Leg spacer block');
+    for (const sx of [-1, 1])
+      reg(pSp, box(LEG_X, 0.05, spLen, cherry, sx * xLeg, ySpB, (ZF + zSp) / 2),
+        [spLen, 0.05, LEG_X]);
+  }
+
+  // small wooden coat pegs on the outer faces of the legs
+  {
+    const pPeg = part('Coat peg');
+    const peg = (x, y, z, sx) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.0095, 0.055, 12), cherryDark);
+      m.rotation.z = -sx * (Math.PI / 2 - 0.12);   // sticks outward, tip slightly up
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      unit.add(reg(pPeg, m, [0.055, 0.02, 0.02]));
+    };
+    for (const sx of [-1, 1]) {
+      peg(sx * (xLeg + LEG_X / 2 + 0.02), 1.56, Z_BACK, sx);                       // back leg
+      peg(sx * (xLeg + LEG_X / 2 + 0.02), 1.40, zr0 - tanT * 1.40 + wH / 2, sx);   // diagonal
+    }
   }
 
   // ---------- top shelf ----------
@@ -443,7 +474,7 @@ function buildModel(wTop, opts = {}) {
 
   // each drawer is a group (front + pull + box) that can slide open
   const drawers = [];
-  const pBoxSide = part('Drawer box side');   // same size in every drawer
+  const pBoxSide = part('Drawer box side · paulownia');   // same size in every drawer
   function drawer(pFront, pBack, pBottom, w, x, y) {
     const zF = CAB_D / 2 + 0.008;   // front face plane
     const g = new THREE.Group();
@@ -451,17 +482,19 @@ function buildModel(wTop, opts = {}) {
     unit.add(g);
     drawers.push(g);
     reg(pFront, box(w, DRAWER_H - 0.015, 0.018, cherryLite, 0, 0, zF, g));
-    const pl = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.014, 0.012), brass);
-    pl.position.set(0, DRAWER_H / 2 - 0.035, zF + 0.014);   // metal pull
-    pl.castShadow = true;
-    g.add(pl);
-    // the box behind the front: two sides, a back, a bottom
+    // routed finger groove under the front's top edge (no metal pulls)
+    const gv = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.min(0.14, w * 0.4), 0.014, 0.009), grooveMat);
+    gv.position.set(0, DRAWER_H / 2 - 0.032, zF + 0.0045);
+    g.add(gv);
+    // the box behind the front: two sides, a back, a bottom — light
+    // paulownia (桐木) like the original's drawer interior
     const bw = w - 0.04, bd = CAB_D - 0.07, bh = DRAWER_H - 0.055;
     const zB = zF - 0.009 - bd / 2;
     for (const s of [-1, 1])
-      reg(pBoxSide, box(0.012, bh, bd, cherry, s * (bw / 2 - 0.006), 0, zB, g));
-    reg(pBack, box(bw - 0.024, bh, 0.012, cherry, 0, 0, zB - bd / 2 + 0.006, g));
-    reg(pBottom, box(bw - 0.024, 0.01, bd - 0.024, cherryDark, 0, -bh / 2 + 0.005, zB, g));
+      reg(pBoxSide, box(0.012, bh, bd, paulownia, s * (bw / 2 - 0.006), 0, zB, g));
+    reg(pBack, box(bw - 0.024, bh, 0.012, paulownia, 0, 0, zB - bd / 2 + 0.006, g));
+    reg(pBottom, box(bw - 0.024, 0.01, bd - 0.024, paulownia, 0, -bh / 2 + 0.005, zB, g));
   }
 
   // flush with the side panels — the top and sides form a clean box so
@@ -526,13 +559,13 @@ function buildModel(wTop, opts = {}) {
       box(CAB_W - 0.036, 0.018, CAB_D - 0.034, cherry, 0, BASE_H + 0.02 + DRAWER_H, -0.003));
     divY0 = BASE_H + 0.02 + DRAWER_H + 0.009;   // divider stands on the mid shelf
     // bottom row: single full-width drawer
-    drawer(part('Drawer front (wide)'), part('Drawer box back (wide)'), part('Drawer box bottom (wide)'),
+    drawer(part('Drawer front (wide)'), part('Drawer box back (wide) · paulownia'), part('Drawer box bottom (wide) · paulownia'),
       CAB_W - 0.025, 0, rowY(0));
   }
   // top row: two half-width drawers with a divider between them
   const pDrawerH = part('Drawer front (half)');
-  const pBackH = part('Drawer box back');
-  const pBottomH = part('Drawer box bottom');
+  const pBackH = part('Drawer box back · paulownia');
+  const pBottomH = part('Drawer box bottom · paulownia');
   for (const sx of [-1, 1])
     drawer(pDrawerH, pBackH, pBottomH, CAB_W / 2 - 0.015, sx * CAB_W / 4, rowY(1));
   // full-depth center partition between the two drawers — the drawer
