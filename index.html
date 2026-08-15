@@ -346,40 +346,55 @@ function buildModel(wTop, opts = {}) {
   const xLeg  = wTop / 2 - LEG_X / 2;
 
   const BACKRAIL_H = 0.075;                       // wooden back rail between leg tops
-  const SHELF_TOP = H_TOTAL - 0.015 - BACKRAIL_H; // shelf sits ~9cm below leg tops
+  const SHELF_TOP = H_TOTAL - 0.03 - BACKRAIL_H; // back rail stays under the slanted leg tops
   const SHELF_BOT = SHELF_TOP - SHELF_T;
 
-  // Top joinery (from the product detail photos): the diagonal NEVER
-  // touches the back leg — it rises past the shelf with constant daylight
-  // between them, tip cut flat at the same height as the leg top. The
-  // joint is the shelf clamped between the two members plus a small
-  // spacer block bridging the gap just below the shelf.
+  // Top joinery (from the product detail photos): diagonal and back leg
+  // MEET at the very top, fusing into one solid head above the shelf —
+  // the diagonal's plumb face mates the leg's front face, and a SINGLE
+  // slanted cut runs across both tops (highest at the front, sloping
+  // down toward the wall). The daylight wedge only opens below that
+  // joint, bridged by a spacer block under the shelf.
   const ZF = Z_BACK + BACK_D / 2;              // front plane of the back leg
-  const DIAG_TOP = H_TOTAL;                    // tip flush with the back-leg top
-  const GAP_TOP = 0.022;                       // daylight at the very top
-  let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - GAP_TOP) / DIAG_TOP;
+  const TOP_W = 0.045;                         // head width in front of the leg
+  const S_TOP = 0.22;                          // slope of the shared top cut
+  const zTF = ZF + TOP_W;                      // front-most point of the head
+  let tanT = (D_BOTTOM / 2 - FRONT_D - zTF) / H_TOTAL;
   const wH  = FRONT_D / Math.cos(Math.atan(tanT));  // horizontal plank width
   const zr0 = D_BOTTOM / 2 - wH;               // rear bottom corner at the floor
-  tanT = (zr0 - ZF - GAP_TOP) / DIAG_TOP;
+  tanT = (zr0 + wH - zTF) / H_TOTAL;
+  const yPl = (zr0 - ZF) / tanT;               // plumb contact starts here
+  const yD  = H_TOTAL - S_TOP * TOP_W;         // top cut height at the joint plane
 
   // side profile in (z, y); u = -z so the extrusion axis maps to world +x
-  // — a clean parallelogram: flat foot on the floor, flat top edge
   const prof = new THREE.Shape();
-  prof.moveTo(-zr0, 0);                                 // rear bottom
-  prof.lineTo(-(zr0 + wH), 0);                          // front bottom
-  prof.lineTo(-(zr0 + wH - tanT * DIAG_TOP), DIAG_TOP); // front top
-  prof.lineTo(-(zr0 - tanT * DIAG_TOP), DIAG_TOP);      // rear top
+  prof.moveTo(-zr0, 0);                        // rear bottom
+  prof.lineTo(-(zr0 + wH), 0);                 // front bottom
+  prof.lineTo(-zTF, H_TOTAL);                  // front top corner — highest point
+  prof.lineTo(-ZF, yD);                        // slanted top cut
+  prof.lineTo(-ZF, yPl);                       // plumb face against the back leg
   prof.closePath();
   const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
+
+  // back leg: same slanted cut continuing across its top
+  const yRr = H_TOTAL - S_TOP * (TOP_W + BACK_D);
+  const bprof = new THREE.Shape();
+  bprof.moveTo(-(Z_BACK - BACK_D / 2), 0);     // rear bottom
+  bprof.lineTo(-ZF, 0);                        // front bottom
+  bprof.lineTo(-ZF, yD);                       // front top (meets the diagonal)
+  bprof.lineTo(-(Z_BACK - BACK_D / 2), yRr);   // rear top, lower
+  bprof.closePath();
+  const backGeo = new THREE.ExtrudeGeometry(bprof, { depth: LEG_X, bevelEnabled: false });
 
   const pFront = part('Front leg (diagonal)');
   const pBack  = part('Back leg');
   for (const sx of [-1, 1]) {
-    // vertical back plank, full height
-    const back = new THREE.Mesh(new THREE.BoxGeometry(LEG_X, H_TOTAL, BACK_D), cherry);
-    back.position.set(sx * xLeg, H_TOTAL / 2, Z_BACK);
+    // vertical back plank with the slanted top cut
+    const back = new THREE.Mesh(backGeo, cherry);
+    back.rotation.y = Math.PI / 2;
+    back.position.x = sx * xLeg - LEG_X / 2;
     back.castShadow = back.receiveShadow = true;
-    unit.add(reg(pBack, back));
+    unit.add(reg(pBack, back, [H_TOTAL, BACK_D, LEG_X]));
 
     // slanted front plank with mitered cuts
     const front = new THREE.Mesh(frontGeo, cherry);
@@ -387,7 +402,7 @@ function buildModel(wTop, opts = {}) {
     front.position.x = sx * xLeg - LEG_X / 2;
     front.castShadow = front.receiveShadow = true;
     unit.add(reg(pFront, front,
-      [DIAG_TOP / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
+      [H_TOTAL / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
   }
 
   // spacer block bridging the daylight between diagonal and back leg,
