@@ -356,31 +356,31 @@ function buildModel(wTop, opts = {}) {
   // down toward the wall). The daylight wedge only opens below that
   // joint, bridged by a spacer block under the shelf.
   const ZF = Z_BACK + BACK_D / 2;              // front plane of the back leg
-  const S_TOP = 0.22;                          // slope of the shared top cut
-  // The diagonal's rear face meets the leg a hand below the shelf, so a
-  // solid neck continues under the shelf (where the dowel plug sits) and
-  // the daylight window only opens beneath that neck (as in the photos).
-  const Y_NECK = SHELF_BOT - 0.06;             // window top, below the shelf
-  let tanT = (D_BOTTOM / 2 - FRONT_D - ZF) / Y_NECK;
+  const S_TOP = 0.22;                          // slope of the shared crown line
+  const GAP_TOP = 0.02;                        // daylight between the two tips
+  // The legs NEVER touch (an "A", not a "4"): a horizontal joint block
+  // just under the shelf bridges the daylight — the crossbar of the A —
+  // bolted through with a visible dowel cap. Both tips are cut along one
+  // shared slanted crown line, highest at the diagonal's front edge.
+  let tanT = (D_BOTTOM / 2 - FRONT_D - ZF - GAP_TOP) / H_TOTAL;
   const wH  = FRONT_D / Math.cos(Math.atan(tanT));  // horizontal plank width
   const zr0 = D_BOTTOM / 2 - wH;               // rear bottom corner at the floor
-  tanT = (zr0 - ZF) / Y_NECK;
-  const yPl = Y_NECK;                          // plumb contact starts here
-  const zTF = zr0 + wH - tanT * H_TOTAL;       // head front edge at the top
-  const yD  = H_TOTAL - S_TOP * (zTF - ZF);    // top cut height at the joint plane
+  tanT = (zr0 - ZF - GAP_TOP) / H_TOTAL;       // rear face at the top: ZF + gap
+  const zTF = ZF + GAP_TOP + wH;               // diagonal front edge at the top
+  const yDr = (H_TOTAL + S_TOP * (zr0 - zTF)) / (1 + S_TOP * tanT); // rear tip corner
+  const yD  = H_TOTAL - S_TOP * (zTF - ZF);    // crown height at the leg's front face
 
   // side profile in (z, y); u = -z so the extrusion axis maps to world +x
   const prof = new THREE.Shape();
   prof.moveTo(-zr0, 0);                        // rear bottom
   prof.lineTo(-(zr0 + wH), 0);                 // front bottom
   prof.lineTo(-zTF, H_TOTAL);                  // front top corner — highest point
-  prof.lineTo(-ZF, yD);                        // slanted top cut
-  prof.lineTo(-ZF, yPl);                       // plumb face against the back leg
+  prof.lineTo(-(zr0 - tanT * yDr), yDr);       // rear top corner on the crown line
   prof.closePath();
   const frontGeo = new THREE.ExtrudeGeometry(prof, { depth: LEG_X, bevelEnabled: false });
 
   // back leg: same slanted cut continuing across its top
-  const yRr = H_TOTAL - S_TOP * (zTF - ZF + BACK_D);
+  const yRr = H_TOTAL - S_TOP * (zTF - (Z_BACK - BACK_D / 2));
   const bprof = new THREE.Shape();
   bprof.moveTo(-(Z_BACK - BACK_D / 2), 0);     // rear bottom
   bprof.lineTo(-ZF, 0);                        // front bottom
@@ -408,14 +408,20 @@ function buildModel(wTop, opts = {}) {
       [H_TOTAL / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
   }
 
-  // round wooden plug caps on the diagonals' outer faces, in the solid
-  // neck under the shelf — the visible dowel of the hidden joint bolt
-  for (const sx of [-1, 1]) {
-    const yCap = SHELF_BOT - 0.033;
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.007, 12), cherryDark);
-    cap.rotation.z = Math.PI / 2;
-    cap.position.set(sx * (xLeg + LEG_X / 2), yCap, zr0 - tanT * yCap + wH / 2);
-    unit.add(cap);
+  // horizontal joint block bridging the daylight just under the shelf —
+  // the crossbar of the "A" — with a dowel cap over the through-bolt
+  {
+    const blkH = 0.065, yBlk = SHELF_BOT - blkH / 2;
+    const zD = zr0 - tanT * yBlk;              // diagonal rear face at mid-block
+    const pBlk = part('Leg joint block');
+    for (const sx of [-1, 1]) {
+      reg(pBlk, box(LEG_X, blkH, zD - ZF + 0.012, cherry, sx * xLeg, yBlk, (ZF + zD) / 2),
+        [zD - ZF + 0.012, blkH, LEG_X]);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.007, 12), cherryDark);
+      cap.rotation.z = Math.PI / 2;
+      cap.position.set(sx * (xLeg + LEG_X / 2), yBlk, zr0 - tanT * yBlk + wH / 2);
+      unit.add(cap);
+    }
   }
 
   // small wooden coat pegs on the outer faces of the legs
