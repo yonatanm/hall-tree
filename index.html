@@ -408,22 +408,24 @@ function buildModel(wTop, opts = {}) {
       [H_TOTAL / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
   }
 
-  // horizontal side bearer at shelf level — THE part that connects the
-  // two legs (the A's crossbar): it spans the full corner, from the
-  // diagonal's front face back across the leg, half-lapped over both,
-  // flush with their side faces; the shelf rests on it from above.
+  // the connecting rung: a short horizontal block bridging the two
+  // members just ABOVE the shelf, doweled into both — daylight shows
+  // above it (between the tips) and below it (the long window)
   {
-    const brH = 0.055, yBr = SHELF_BOT - brH / 2;
-    const zFr = zr0 + wH - tanT * SHELF_BOT;   // diagonal front face at shelf level
-    const zRear = Z_BACK - BACK_D / 2;         // rear face of the back leg
-    const pBr = part('Top side bearer');
+    const blkH = 0.05;
+    const yBlk = SHELF_TOP + 0.03;             // block center, above the shelf
+    const zRearD = zr0 - tanT * yBlk;          // diagonal rear face at that height
+    const pBlk = part('Leg joint block');
     for (const sx of [-1, 1]) {
-      reg(pBr, box(LEG_X, brH, zFr - zRear, cherry, sx * xLeg, yBr, (zFr + zRear) / 2),
-        [zFr - zRear, brH, LEG_X]);
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.007, 12), cherryDark);
-      cap.rotation.z = Math.PI / 2;
-      cap.position.set(sx * (xLeg + LEG_X / 2), yBr, (ZF + zr0 - tanT * yBr) / 2);
-      unit.add(cap);
+      reg(pBlk, box(LEG_X, blkH, zRearD - ZF + 0.016, cherry, sx * xLeg, yBlk, (ZF + zRearD) / 2),
+        [zRearD - ZF + 0.016, blkH, LEG_X]);
+      // dowel caps on both members, pinning the block
+      for (const zc of [zRearD + wH / 2, Z_BACK]) {
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.007, 12), cherryDark);
+        cap.rotation.z = Math.PI / 2;
+        cap.position.set(sx * (xLeg + LEG_X / 2), yBlk, zc);
+        unit.add(cap);
+      }
     }
   }
 
