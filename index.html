@@ -138,6 +138,7 @@
   <button data-view="back">Back</button>
   <button data-view="left">Left</button>
   <button data-view="top">Top</button>
+  <button id="orthoBtn">⬜ Ortho</button>
   <button id="drawerBtn">🗄 Drawers</button>
   <button id="dimBtn">📏 Dimensions</button>
   <button id="partsBtn">🔠 Parts</button>
@@ -991,9 +992,41 @@ const VIEWS = {
 let camTween = null;
 for (const b of document.querySelectorAll('#views button[data-view]')) {
   b.onclick = () => {
-    camTween = { from: camera.position.clone(), to: new THREE.Vector3(...VIEWS[b.dataset.view]), t: 0 };
+    camTween = { from: controls.object.position.clone(), to: new THREE.Vector3(...VIEWS[b.dataset.view]), t: 0 };
   };
 }
+
+// ---------- orthographic / perspective toggle ----------
+const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 100);
+let orthoHalfH = 1.4;
+const orthoBtn = document.getElementById('orthoBtn');
+function sizeOrtho() {
+  const a = innerWidth / innerHeight;
+  orthoCam.left = -orthoHalfH * a;
+  orthoCam.right = orthoHalfH * a;
+  orthoCam.top = orthoHalfH;
+  orthoCam.bottom = -orthoHalfH;
+  orthoCam.updateProjectionMatrix();
+}
+function setOrtho(on) {
+  const cur = controls.object;
+  if (on) {
+    // match the orthographic frame to what the perspective camera sees
+    orthoHalfH = cur.position.distanceTo(controls.target) *
+      Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    orthoCam.position.copy(cur.position);
+    orthoCam.zoom = 1;
+    sizeOrtho();
+    controls.object = orthoCam;
+  } else {
+    camera.position.copy(cur.position);
+    controls.object = camera;
+  }
+  orthoBtn.classList.toggle('on', on);
+  controls.update();
+}
+orthoBtn.onclick = () => setOrtho(controls.object === camera);
+if (new URLSearchParams(location.search).get('ortho') === '1') setOrtho(true);
 
 // ---------- reference photo overlay ----------
 const photo = document.getElementById('photo');
@@ -1008,7 +1041,7 @@ function animate() {
   if (camTween) {
     camTween.t = Math.min(1, camTween.t + dt / 0.6);
     const k = camTween.t * camTween.t * (3 - 2 * camTween.t);  // smoothstep ease
-    camera.position.lerpVectors(camTween.from, camTween.to, k);
+    controls.object.position.lerpVectors(camTween.from, camTween.to, k);
     if (camTween.t >= 1) camTween = null;
   }
   // ease the drawers toward open/closed
@@ -1017,13 +1050,14 @@ function animate() {
     for (const d of m.unit.userData.drawers)
       d.position.z += (dz - d.position.z) * Math.min(1, dt * 7);
   controls.update();
-  renderer.render(scene, camera);
+  renderer.render(scene, controls.object);
 }
 animate();
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  sizeOrtho();
   renderer.setSize(innerWidth, innerHeight);
 });
 </script>
