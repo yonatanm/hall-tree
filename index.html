@@ -408,18 +408,21 @@ function buildModel(wTop, opts = {}) {
       [H_TOTAL / Math.cos(Math.atan(tanT)) + 0.02, FRONT_D, LEG_X]));
   }
 
-  // horizontal joint block bridging the daylight just under the shelf —
-  // the crossbar of the "A" — with a dowel cap over the through-bolt
+  // horizontal side bearer at shelf level — THE part that connects the
+  // two legs (the A's crossbar): it spans the full corner, from the
+  // diagonal's front face back across the leg, half-lapped over both,
+  // flush with their side faces; the shelf rests on it from above.
   {
-    const blkH = 0.065, yBlk = SHELF_BOT - blkH / 2;
-    const zD = zr0 - tanT * yBlk;              // diagonal rear face at mid-block
-    const pBlk = part('Leg joint block');
+    const brH = 0.055, yBr = SHELF_BOT - brH / 2;
+    const zFr = zr0 + wH - tanT * SHELF_BOT;   // diagonal front face at shelf level
+    const zRear = Z_BACK - BACK_D / 2;         // rear face of the back leg
+    const pBr = part('Top side bearer');
     for (const sx of [-1, 1]) {
-      reg(pBlk, box(LEG_X, blkH, zD - ZF + 0.012, cherry, sx * xLeg, yBlk, (ZF + zD) / 2),
-        [zD - ZF + 0.012, blkH, LEG_X]);
+      reg(pBr, box(LEG_X, brH, zFr - zRear, cherry, sx * xLeg, yBr, (zFr + zRear) / 2),
+        [zFr - zRear, brH, LEG_X]);
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.007, 12), cherryDark);
       cap.rotation.z = Math.PI / 2;
-      cap.position.set(sx * (xLeg + LEG_X / 2), yBlk, zr0 - tanT * yBlk + wH / 2);
+      cap.position.set(sx * (xLeg + LEG_X / 2), yBr, (ZF + zr0 - tanT * yBr) / 2);
       unit.add(cap);
     }
   }
